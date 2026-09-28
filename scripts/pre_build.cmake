@@ -21,13 +21,17 @@ endif()
 # Set Win32 compiler flag
 target_compile_definitions(${PROJECT_NAME} PUBLIC WIN32 _CONSOLE _MBCS)
 
-# Set the generator platform
-set(CMAKE_GENERATOR_PLATFORM "WIN32")
+# Set the generator platform. Only Visual Studio accepts one; the llvm-mingw
+# cross build uses Ninja, which errors out on a platform specification.
+if (CMAKE_GENERATOR MATCHES "Visual Studio")
+  set(CMAKE_GENERATOR_PLATFORM "WIN32")
+endif()
 
 # If we are building on windows
 if (WIN32)
-  # Set the generator platform
-  set(CMAKE_GENERATOR_PLATFORM "WIN32")
+  if (CMAKE_GENERATOR MATCHES "Visual Studio")
+    set(CMAKE_GENERATOR_PLATFORM "WIN32")
+  endif()
 
   # Check to see if we are running a github action
   if (DEFINED CICD)
