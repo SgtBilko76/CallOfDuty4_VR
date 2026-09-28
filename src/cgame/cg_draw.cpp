@@ -1803,6 +1803,17 @@ void __cdecl CG_DrawActive(int localClientNum)
             CL_RenderScene(
                 &scopeRefdef);
 
+            // The WinlatorXR layout puts the panel inside the window, so copy
+            // it out here: this queues behind the scope camera's own commands
+            // and ahead of the eye views that repaint that area.
+            if (VR_IsWinlatorXrBackendActive())
+            {
+                R_AddCmdVrCaptureScopePanel(
+                    scopePanelX,
+                    scopePanelY,
+                    scopePanelSize);
+            }
+
             if (frontEndDataOut->viewInfoCount >
                 scopeViewInfoIndex)
             {

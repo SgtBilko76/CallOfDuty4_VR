@@ -437,6 +437,7 @@ void __cdecl RB_ClearScreenCmd(GfxRenderCommandExecState *execState);
 void __cdecl RB_SetGammaRamp(const GfxGammaRamp *gammaTable);
 void __cdecl RB_SaveScreenCmd(GfxRenderCommandExecState *execState);
 void __cdecl RB_SaveScreenSectionCmd(GfxRenderCommandExecState *execState);
+void __cdecl RB_VrCaptureScopePanelCmd(GfxRenderCommandExecState *execState);
 void __cdecl R_ResolveSection(GfxCmdBufContext context, GfxImage *image);
 void __cdecl RB_BlendSavedScreenBlurredCmd(GfxRenderCommandExecState *execState);
 void __cdecl R_SetCodeImageTexture(GfxCmdBufSourceState *source, MaterialTextureSource codeTexture, const GfxImage *image);

@@ -40,8 +40,11 @@
 #ifdef KISAK_SP
 #include <client/cl_scrn.h>
 #endif
+#include <vr/vr_winlatorxr.h>
+#ifdef KISAK_SP
+#endif
 
-void(__cdecl *const RB_RenderCommandTable[22])(GfxRenderCommandExecState *) =
+void(__cdecl *const RB_RenderCommandTable[23])(GfxRenderCommandExecState *) =
 {
   NULL,
   &RB_SetMaterialColorCmd,
@@ -64,7 +67,8 @@ void(__cdecl *const RB_RenderCommandTable[22])(GfxRenderCommandExecState *) =
   &RB_DrawLinesCmd,
   &RB_DrawTrianglesCmd,
   &RB_DrawProfileCmd,
-  &RB_ProjectionSetCmd
+  &RB_ProjectionSetCmd,
+  &RB_VrCaptureScopePanelCmd
 }; // idb
 
 GfxBackEndData *backEndData;
@@ -1014,6 +1018,23 @@ void __cdecl RB_SetGammaRamp(const GfxGammaRamp *gammaTable)
         d3dGammaRamp.blue[colorIndex] = gammaTable->entries[colorIndex];
     }
     dx.device->SetGammaRamp(dx.targetWindowIndex, 0, &d3dGammaRamp);
+}
+
+void __cdecl RB_VrCaptureScopePanelCmd(GfxRenderCommandExecState *execState)
+{
+    const GfxCmdVrCaptureScopePanel *cmd =
+        (const GfxCmdVrCaptureScopePanel *)execState->cmd;
+
+    if (tess.indexCount)
+        RB_EndTessSurface();
+
+    // Copied from whichever target the views are drawing into, which is the
+    // same surface the panel coordinates came from.
+    VR_WinlatorXrCaptureScopePanel(
+        gfxCmdBufState.prim.device,
+        cmd->panelX,
+        cmd->panelY,
+        cmd->panelSize);
 }
 
 void __cdecl RB_SaveScreenCmd(GfxRenderCommandExecState *execState)

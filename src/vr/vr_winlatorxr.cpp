@@ -221,6 +221,23 @@ struct ScreenVertex
 // temporary texture is released immediately so it never blocks a legacy
 // IDirect3DDevice9::Reset(); render targets and all device state are
 // restored so the renderer's own state cache stays valid.
+namespace
+{
+
+// The scope camera's image, copied out of the window before the eye views
+// repaint that area. Kept across frames so a dropped capture shows the
+// previous image rather than nothing.
+struct ScopePanelCapture
+{
+    IDirect3DTexture9* texture = nullptr;
+    int size = 0;
+    bool valid = false;
+};
+
+ScopePanelCapture g_scopePanel;
+
+} // namespace
+
 HRESULT PresentVirtualScreen(
     IDirect3DDevice9* const device,
     IDirect3DSurface9* const backBuffer,
@@ -838,4 +855,78 @@ void VR_WinlatorXrBeforePresent(
             matched ? "matched render pose" : "latest packet");
         wxr::g_loggedFirstStamp = true;
     }
+}
+
+void VR_WinlatorXrCaptureScopePanel(
+    IDirect3DDevice9* const device,
+    const int panelX,
+    const int panelY,
+    const int panelSize)
+{
+    using kisak::vr::winlatorxr::g_scopePanel;
+
+    if (device == nullptr || panelSize <= 0)
+    {
+        return;
+    }
+
+    IDirect3DSurface9* source = nullptr;
+    if (FAILED(device->GetRenderTarget(0u, &source)) ||
+        source == nullptr)
+    {
+        return;
+    }
+
+    D3DSURFACE_DESC sourceDescription = {};
+    HRESULT hr = source->GetDesc(&sourceDescription);
+
+    if (SUCCEEDED(hr) &&
+        (g_scopePanel.texture == nullptr ||
+         g_scopePanel.size != panelSize))
+    {
+        if (g_scopePanel.texture != nullptr)
+        {
+            g_scopePanel.texture->Release();
+            g_scopePanel.texture = nullptr;
+            g_scopePanel.valid = false;
+        }
+
+        hr = device->CreateTexture(
+            static_cast<UINT>(panelSize),
+            static_cast<UINT>(panelSize),
+            1u,
+            D3DUSAGE_RENDERTARGET,
+            sourceDescription.Format,
+            D3DPOOL_DEFAULT,
+            &g_scopePanel.texture,
+            nullptr);
+
+        g_scopePanel.size = SUCCEEDED(hr) ? panelSize : 0;
+    }
+
+    if (SUCCEEDED(hr) && g_scopePanel.texture != nullptr)
+    {
+        IDirect3DSurface9* destination = nullptr;
+        if (SUCCEEDED(g_scopePanel.texture->GetSurfaceLevel(
+                0u, &destination)))
+        {
+            const RECT sourceRect = {
+                static_cast<LONG>(panelX),
+                static_cast<LONG>(panelY),
+                static_cast<LONG>(panelX + panelSize),
+                static_cast<LONG>(panelY + panelSize),
+            };
+
+            g_scopePanel.valid = SUCCEEDED(device->StretchRect(
+                source,
+                &sourceRect,
+                destination,
+                nullptr,
+                D3DTEXF_NONE));
+
+            destination->Release();
+        }
+    }
+
+    source->Release();
 }
