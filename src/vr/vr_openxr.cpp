@@ -26370,13 +26370,31 @@ bool VR_GetPhysicalSniperScopeCaptureLayout(
     }
 
     VrPackedLayout::CaptureLayout layout;
-    if (!VrPackedLayout::ResolveCaptureLayout(
-            backbufferWidth,
-            backbufferHeight,
-            leftEyeWidth,
-            rightEyeWidth,
-            g_vrScopeCaptureSizePixels,
-            &layout))
+
+    // WinlatorXR splits the window down the middle, so there is no room
+    // alongside the eyes for a panel. It gets a transient one inside the
+    // window instead; see vr_packed_layout.h.
+    if (g_vrRuntimeBackend ==
+        VrRuntimeBackend::WinlatorXr)
+    {
+        backendName = "WinlatorXR";
+
+        if (!VrPackedLayout::ResolveTransientCaptureLayout(
+                backbufferWidth,
+                backbufferHeight,
+                g_vrScopeCaptureSizePixels,
+                &layout))
+        {
+            return false;
+        }
+    }
+    else if (!VrPackedLayout::ResolveCaptureLayout(
+                 backbufferWidth,
+                 backbufferHeight,
+                 leftEyeWidth,
+                 rightEyeWidth,
+                 g_vrScopeCaptureSizePixels,
+                 &layout))
     {
         return false;
     }
