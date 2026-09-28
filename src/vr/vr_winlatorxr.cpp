@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -236,6 +237,65 @@ struct ScopePanelCapture
 };
 
 ScopePanelCapture g_scopePanel;
+
+// An optic is round; the captured panel is square. The alpha comes from a
+// mask built once: opaque inside the lens with a short falloff at the rim so
+// the edge is not a staircase.
+IDirect3DTexture9* g_scopeLensMask = nullptr;
+
+IDirect3DTexture9* EnsureScopeLensMask(IDirect3DDevice9* const device)
+{
+    constexpr UINT kMaskSize = 256u;
+
+    if (g_scopeLensMask != nullptr)
+    {
+        return g_scopeLensMask;
+    }
+
+    if (FAILED(device->CreateTexture(
+            kMaskSize, kMaskSize, 1u, 0u,
+            D3DFMT_A8R8G8B8, D3DPOOL_MANAGED,
+            &g_scopeLensMask, nullptr)))
+    {
+        g_scopeLensMask = nullptr;
+        return nullptr;
+    }
+
+    D3DLOCKED_RECT locked = {};
+    if (FAILED(g_scopeLensMask->LockRect(0u, &locked, nullptr, 0u)))
+    {
+        g_scopeLensMask->Release();
+        g_scopeLensMask = nullptr;
+        return nullptr;
+    }
+
+    constexpr float kEdge = 0.02f;
+    const float center = 0.5f * static_cast<float>(kMaskSize - 1u);
+
+    for (UINT y = 0u; y < kMaskSize; ++y)
+    {
+        auto* const row = reinterpret_cast<std::uint32_t*>(
+            static_cast<std::uint8_t*>(locked.pBits) +
+            static_cast<std::size_t>(y) * locked.Pitch);
+
+        for (UINT x = 0u; x < kMaskSize; ++x)
+        {
+            const float dx = (static_cast<float>(x) - center) / center;
+            const float dy = (static_cast<float>(y) - center) / center;
+            const float radius = std::sqrt(dx * dx + dy * dy);
+
+            float coverage = (1.0f - radius) / kEdge;
+            coverage = coverage < 0.0f ? 0.0f : (coverage > 1.0f ? 1.0f : coverage);
+
+            row[x] =
+                (static_cast<std::uint32_t>(coverage * 255.0f + 0.5f) << 24) |
+                0x00FFFFFFu;
+        }
+    }
+
+    g_scopeLensMask->UnlockRect(0u);
+    return g_scopeLensMask;
+}
 
 } // namespace
 
@@ -521,6 +581,8 @@ HRESULT PresentScopeLens(
         device->SetVertexShader(nullptr);
         device->SetPixelShader(nullptr);
         device->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
+        IDirect3DTexture9* const mask = EnsureScopeLensMask(device);
+
         device->SetTexture(0u, g_scopePanel.texture);
         device->SetTextureStageState(0u, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
         device->SetTextureStageState(0u, D3DTSS_COLORARG1, D3DTA_TEXTURE);
@@ -528,7 +590,29 @@ HRESULT PresentScopeLens(
         device->SetTextureStageState(0u, D3DTSS_TEXCOORDINDEX, 0u);
         device->SetTextureStageState(
             0u, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
-        device->SetTextureStageState(1u, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        if (mask != nullptr)
+        {
+            // Colour stays the panel's; alpha comes from the mask, sampled
+            // with the same coordinates.
+            device->SetTexture(1u, mask);
+            device->SetTextureStageState(1u, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+            device->SetTextureStageState(1u, D3DTSS_COLORARG1, D3DTA_CURRENT);
+            device->SetTextureStageState(1u, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+            device->SetTextureStageState(1u, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+            device->SetTextureStageState(1u, D3DTSS_TEXCOORDINDEX, 0u);
+            device->SetTextureStageState(
+                1u, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
+            device->SetTextureStageState(2u, D3DTSS_COLOROP, D3DTOP_DISABLE);
+            device->SetSamplerState(1u, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+            device->SetSamplerState(1u, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+            device->SetSamplerState(1u, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+            device->SetSamplerState(1u, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+            device->SetSamplerState(1u, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+        }
+        else
+        {
+            device->SetTextureStageState(1u, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        }
         device->SetSamplerState(0u, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
         device->SetSamplerState(0u, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
         device->SetSamplerState(0u, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
@@ -537,7 +621,10 @@ HRESULT PresentScopeLens(
         device->SetSamplerState(0u, D3DSAMP_SRGBTEXTURE, FALSE);
         device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
         device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
-        device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+        device->SetRenderState(
+            D3DRS_ALPHABLENDENABLE, mask != nullptr ? TRUE : FALSE);
+        device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+        device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
         device->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
         device->SetRenderState(D3DRS_STENCILENABLE, FALSE);
         device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
@@ -631,6 +718,7 @@ HRESULT PresentScopeLens(
         }
 
         device->SetTexture(0u, nullptr);
+        device->SetTexture(1u, nullptr);
         device->SetRenderTarget(0u, savedTarget);
         device->SetDepthStencilSurface(savedDepth);
         savedState->Apply();
