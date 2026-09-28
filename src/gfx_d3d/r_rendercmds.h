@@ -35,7 +35,8 @@ enum GfxRenderCommand : __int32
     RC_DRAW_TRIANGLES = 0x13,
     RC_DRAW_PROFILE = 0x14,
     RC_PROJECTION_SET = 0x15,
-    RC_COUNT = 0x16,
+    RC_VR_CAPTURE_SCOPE_PANEL = 0x16,
+    RC_COUNT = 0x17,
 };
 enum GfxRenderTargetId : __int32
 {                                       // ...
@@ -183,6 +184,17 @@ struct GfxCmdSaveScreen // sizeof=0x8
 {
     GfxCmdHeader header;
     int screenTimerId;
+};
+
+// The scope camera draws into a panel inside the window that the eye views
+// then repaint, so the panel has to be copied out while the command list is
+// being replayed, between those views. See vr_packed_layout.h.
+struct GfxCmdVrCaptureScopePanel // sizeof=0x10
+{
+    GfxCmdHeader header;
+    int panelX;
+    int panelY;
+    int panelSize;
 };
 
 struct GfxRenderTargetSurface // sizeof=0x8
@@ -799,6 +811,10 @@ void R_EnvMapOverrideConstants();
 void __cdecl R_EndFrame();
 void __cdecl R_AddCmdClearScreen(int whichToClear, const float *color, float depth, uint8_t stencil);
 void __cdecl R_AddCmdSaveScreen(uint32_t screenTimerId);
+void __cdecl R_AddCmdVrCaptureScopePanel(
+    int panelX,
+    int panelY,
+    int panelSize);
 void __cdecl R_AddCmdSaveScreenSection(
     float viewX,
     float viewY,
