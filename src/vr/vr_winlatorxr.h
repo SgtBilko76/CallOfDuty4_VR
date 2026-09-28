@@ -76,7 +76,21 @@ struct VirtualScreen
     std::array<std::array<std::array<float, 3>, kGridPoints>, 2> grid = {};
 };
 
+// The scope camera's image, drawn on the optic itself. Unlike the virtual
+// screen this composites over the world rather than replacing it, and its
+// source is the panel captured mid-frame rather than a piece of the window.
+struct ScopeLens
+{
+    bool active = false;
+
+    // Per eye, normalized eye-image coordinates u, v and 1/depth for each
+    // grid point, exactly as VirtualScreen uses them.
+    std::array<std::array<std::array<float, 3>, VirtualScreen::kGridPoints>, 2>
+        grid = {};
+};
+
 void SetVirtualScreen(const VirtualScreen& screen);
+void SetScopeLens(const ScopeLens& lens);
 
 } // namespace kisak::vr::winlatorxr
 
