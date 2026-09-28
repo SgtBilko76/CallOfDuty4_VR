@@ -73,6 +73,7 @@ bool g_loggedFirstScreen = false;
 
 std::mutex g_screenMutex;
 VirtualScreen g_virtualScreen;
+ScopeLens g_scopeLens;
 
 bool DirectoryExists(const char* path)
 {
@@ -467,6 +468,189 @@ HRESULT PresentVirtualScreen(
     return hr;
 }
 
+
+// Draws the captured scope panel on the optic. This is PresentVirtualScreen's
+// sibling: same pre-transformed grid, but it composites over the world instead
+// of replacing it, and it samples the panel captured earlier in the frame.
+//
+// The two should be folded together once this has been confirmed on hardware.
+HRESULT PresentScopeLens(
+    IDirect3DDevice9* const device,
+    IDirect3DSurface9* const backBuffer,
+    const ScopeLens& lens)
+{
+    if (g_scopePanel.texture == nullptr || !g_scopePanel.valid)
+    {
+        return S_OK;
+    }
+
+    D3DSURFACE_DESC description = {};
+    HRESULT hr = backBuffer->GetDesc(&description);
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+    const float windowHeight = static_cast<float>(description.Height);
+    const float eyeWidth = static_cast<float>(description.Width) * 0.5f;
+
+    IDirect3DStateBlock9* savedState = nullptr;
+    IDirect3DSurface9* savedTarget = nullptr;
+    IDirect3DSurface9* savedDepth = nullptr;
+
+    hr = device->CreateStateBlock(D3DSBT_ALL, &savedState);
+
+    if (SUCCEEDED(hr))
+    {
+        device->GetRenderTarget(0u, &savedTarget);
+        device->GetDepthStencilSurface(&savedDepth);
+
+        device->SetRenderTarget(0u, backBuffer);
+        device->SetDepthStencilSurface(nullptr);
+
+        const D3DVIEWPORT9 viewport = {
+            0u,
+            0u,
+            description.Width,
+            description.Height,
+            0.0f,
+            1.0f,
+        };
+        device->SetViewport(&viewport);
+
+        device->SetVertexShader(nullptr);
+        device->SetPixelShader(nullptr);
+        device->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
+        device->SetTexture(0u, g_scopePanel.texture);
+        device->SetTextureStageState(0u, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+        device->SetTextureStageState(0u, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+        device->SetTextureStageState(0u, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+        device->SetTextureStageState(0u, D3DTSS_TEXCOORDINDEX, 0u);
+        device->SetTextureStageState(
+            0u, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
+        device->SetTextureStageState(1u, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        device->SetSamplerState(0u, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+        device->SetSamplerState(0u, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+        device->SetSamplerState(0u, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+        device->SetSamplerState(0u, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+        device->SetSamplerState(0u, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+        device->SetSamplerState(0u, D3DSAMP_SRGBTEXTURE, FALSE);
+        device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+        device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+        device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+        device->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+        device->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+        device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+        device->SetRenderState(D3DRS_LIGHTING, FALSE);
+        device->SetRenderState(D3DRS_FOGENABLE, FALSE);
+        device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+        device->SetRenderState(D3DRS_COLORWRITEENABLE, 0xFu);
+        device->SetRenderState(D3DRS_SCISSORTESTENABLE, TRUE);
+
+        const bool ownScene = SUCCEEDED(device->BeginScene());
+
+        constexpr std::size_t kCells = VirtualScreen::kGridCells;
+        constexpr std::size_t kRow = kCells + 1u;
+        std::array<ScreenVertex, kCells * kCells * 6u> vertices = {};
+
+        for (std::size_t eye = 0u; eye < 2u && SUCCEEDED(hr); ++eye)
+        {
+            const float eyeLeft = static_cast<float>(eye) * eyeWidth;
+            const auto& grid = lens.grid[eye];
+
+            std::size_t vertexCount = 0u;
+            for (std::size_t row = 0u; row < kCells; ++row)
+            {
+                for (std::size_t column = 0u; column < kCells; ++column)
+                {
+                    const std::size_t cell[4] = {
+                        row * kRow + column,
+                        row * kRow + column + 1u,
+                        (row + 1u) * kRow + column + 1u,
+                        (row + 1u) * kRow + column,
+                    };
+
+                    bool behind = false;
+                    bool allLeft = true;
+                    bool allRight = true;
+                    bool allAbove = true;
+                    bool allBelow = true;
+                    for (const std::size_t point : cell)
+                    {
+                        behind = behind || !(grid[point][2] > 0.0f);
+                        allLeft = allLeft && grid[point][0] < 0.0f;
+                        allRight = allRight && grid[point][0] > 1.0f;
+                        allAbove = allAbove && grid[point][1] < 0.0f;
+                        allBelow = allBelow && grid[point][1] > 1.0f;
+                    }
+
+                    if (behind || allLeft || allRight || allAbove || allBelow)
+                    {
+                        continue;
+                    }
+
+                    static const std::size_t kTriangles[6] =
+                        {0u, 1u, 2u, 0u, 2u, 3u};
+                    for (const std::size_t corner : kTriangles)
+                    {
+                        const std::size_t point = cell[corner];
+                        ScreenVertex& vertex = vertices[vertexCount++];
+                        vertex.x = eyeLeft + grid[point][0] * eyeWidth - 0.5f;
+                        vertex.y = grid[point][1] * windowHeight - 0.5f;
+                        vertex.z = 0.5f;
+                        vertex.rhw = grid[point][2];
+                        vertex.u = static_cast<float>(point % kRow) / kCells;
+                        vertex.v = static_cast<float>(point / kRow) / kCells;
+                    }
+                }
+            }
+
+            if (vertexCount == 0u)
+            {
+                continue;
+            }
+
+            const RECT scissor = {
+                static_cast<LONG>(eyeLeft),
+                0,
+                static_cast<LONG>(eyeLeft + eyeWidth),
+                static_cast<LONG>(windowHeight),
+            };
+            device->SetScissorRect(&scissor);
+
+            hr = device->DrawPrimitiveUP(
+                D3DPT_TRIANGLELIST,
+                static_cast<UINT>(vertexCount / 3u),
+                vertices.data(),
+                sizeof(ScreenVertex));
+        }
+
+        if (ownScene)
+        {
+            device->EndScene();
+        }
+
+        device->SetTexture(0u, nullptr);
+        device->SetRenderTarget(0u, savedTarget);
+        device->SetDepthStencilSurface(savedDepth);
+        savedState->Apply();
+    }
+
+    if (savedDepth != nullptr)
+    {
+        savedDepth->Release();
+    }
+    if (savedTarget != nullptr)
+    {
+        savedTarget->Release();
+    }
+    if (savedState != nullptr)
+    {
+        savedState->Release();
+    }
+    return hr;
+}
+
 } // namespace
 
 bool IsContainerDetected()
@@ -559,6 +743,7 @@ bool Start(std::string* const error)
     {
         std::lock_guard<std::mutex> lock(g_screenMutex);
         g_virtualScreen = {};
+        g_scopeLens = {};
     }
     g_stopRequested.store(false, std::memory_order_release);
     g_receiveThread = std::thread(ReceiveLoop);
@@ -710,6 +895,12 @@ void SendState(const StatePacket& state)
         sizeof(address));
 }
 
+void SetScopeLens(const ScopeLens& lens)
+{
+    std::lock_guard<std::mutex> lock(g_screenMutex);
+    g_scopeLens = lens;
+}
+
 void SetVirtualScreen(const VirtualScreen& screen)
 {
     std::lock_guard<std::mutex> lock(g_screenMutex);
@@ -789,6 +980,17 @@ void VR_WinlatorXrBeforePresent(
     {
         std::lock_guard<std::mutex> lock(wxr::g_screenMutex);
         screen = wxr::g_virtualScreen;
+    }
+
+    wxr::ScopeLens lens;
+    {
+        std::lock_guard<std::mutex> lock(wxr::g_screenMutex);
+        lens = wxr::g_scopeLens;
+    }
+
+    if (SUCCEEDED(hr) && backBuffer != nullptr && lens.active)
+    {
+        wxr::PresentScopeLens(device, backBuffer, lens);
     }
 
     if (SUCCEEDED(hr) && backBuffer != nullptr && screen.active)
