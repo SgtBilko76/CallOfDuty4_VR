@@ -39,6 +39,8 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
 # The decompiled sources are written for MSVC: __declspec, MS struct
 # extensions, and 32-bit MS-style __asm blocks.
+# Not -fms-compatibility: it defines _MSC_VER, which sends mingw's own CRT
+# headers down MSVC-only paths they cannot satisfy.
 set(KISAK_MINGW_MS_FLAGS "-fms-extensions -fdeclspec -fasm-blocks")
 set(CMAKE_C_FLAGS_INIT   "${KISAK_MINGW_MS_FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${KISAK_MINGW_MS_FLAGS}")

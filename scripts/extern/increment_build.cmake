@@ -6,9 +6,18 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-# Add a custom target to increment the build number
+# The build-number script runs on the build machine, so pick it by host, not
+# by target: a cross build targets Windows from a Linux host. The shell copy
+# is run through sh because its executable bit does not survive a Windows
+# checkout.
+if(CMAKE_HOST_WIN32)
+  set(KISAK_BUILD_NUMBER_COMMAND ${SCRIPTS_DIR}/increment_build.cmd)
+else()
+  set(KISAK_BUILD_NUMBER_COMMAND sh ${SCRIPTS_DIR}/increment_build.sh)
+endif()
+
 add_custom_target(
   update_build_number
-  COMMAND ${SCRIPTS_DIR}/increment_build${SCRIPT_EXT} ${SRC_DIR} ${GIT_COMMIT_COUNT}
+  COMMAND ${KISAK_BUILD_NUMBER_COMMAND} ${SRC_DIR} ${GIT_COMMIT_COUNT}
   COMMENT "Running build number script..."
 )
