@@ -9,6 +9,14 @@ set(PLATFORM_OVERRIDE_DIR "${SRC_DIR}/_platform/win32")
 # Apply override for specific directories
 apply_platform_overrides(CLIENT_MP "${PLATFORM_OVERRIDE_DIR}")
 
+# zlib's table generator is a standalone tool with its own main(). MSVC never
+# noticed because the game enters at WinMain, but in the llvm-mingw link that
+# second entry point wins: the executable runs the generator, prints a table
+# and exits, which looks exactly like "it does not start".
+if (NOT MSVC)
+    list(REMOVE_ITEM ZLIB "${DEPS_DIR}/zlib/maketree.c")
+endif()
+
 # Handle the platform specific things FIRST
 set_property( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${BIN_NAME} )
 # MSVC command-line options. The llvm-mingw cross build drives clang, which
