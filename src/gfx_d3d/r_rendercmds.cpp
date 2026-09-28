@@ -1516,6 +1516,27 @@ void __cdecl R_AddCmdSaveScreen(uint32_t screenTimerId)
     cmd->screenTimerId = screenTimerId;
 }
 
+void __cdecl R_AddCmdVrCaptureScopePanel(
+    int panelX,
+    int panelY,
+    int panelSize)
+{
+    GfxCmdVrCaptureScopePanel *cmd;
+
+    if (panelSize <= 0)
+        return;
+
+    cmd = (GfxCmdVrCaptureScopePanel *)R_GetCommandBuffer(
+        RC_VR_CAPTURE_SCOPE_PANEL,
+        sizeof(GfxCmdVrCaptureScopePanel));
+    if (!cmd)
+        return;
+
+    cmd->panelX = panelX;
+    cmd->panelY = panelY;
+    cmd->panelSize = panelSize;
+}
+
 void __cdecl R_AddCmdSaveScreenSection(
     float viewX,
     float viewY,
