@@ -8325,43 +8325,20 @@ bool VR_RenderFsrUpscaledEye(
     return true;
 }
 
-void VR_RenderPhysicalSniperScope(
-    const std::uint32_t eyeIndex,
-    const int32_t viewportWidth,
-    const int32_t viewportHeight,
-    const XrView& sourceView)
+// The optic's lens in app space: its centre, a point one lens radius to
+// the right, one a radius up, and the aim point along its axis. Shared so
+// the WinlatorXR lens and the OpenXR scope shader place the optic from the
+// same weapon pose and calibration rather than drifting apart.
+struct VrScopeLensPoints
 {
-    if (eyeIndex >= g_vrViews.size() ||
-        eyeIndex >= g_vrBlitVertexBuffers.size() ||
-        viewportWidth <= 0 ||
-        viewportHeight <= 0 ||
-        !g_vrScopePixelShader ||
-        !g_vrScopeConstantBuffer ||
-        !g_vrCapturedStereoView)
-    {
-        return;
-    }
+    XrVector3f center;
+    XrVector3f right;
+    XrVector3f up;
+    XrVector3f aimPoint;
+};
 
-    bool scopeActive = false;
-    float adsFraction = 0.0f;
-    float adsFovDegrees = 65.0f;
-
-    {
-        std::lock_guard<std::mutex> lock(
-            g_vrScopeStateMutex);
-
-        scopeActive = g_vrScopeActive;
-        adsFraction = g_vrScopeAdsFraction;
-        adsFovDegrees = g_vrScopeAdsFovDegrees;
-    }
-
-    if (!scopeActive ||
-        adsFraction <= 0.01f ||
-        adsFovDegrees <= 1.0f)
-    {
-        return;
-    }
-
+bool VR_ComputeScopeLensPoints(VrScopeLensPoints* const points)
+{
     XrVector3f controllerPosition = {};
     XrQuaternionf controllerOrientation = {
         0.0f,
@@ -8381,7 +8358,7 @@ void VR_RenderPhysicalSniperScope(
 
         if (!g_vrRightControllerWeaponFilterValid)
         {
-            return;
+            return false;
         }
 
         controllerPosition =
@@ -8538,6 +8515,61 @@ void VR_RenderPhysicalSniperScope(
             lensCenter,
             scopeForward,
             32.0f);
+
+    points->center = lensCenter;
+    points->right = lensRight;
+    points->up = lensUp;
+    points->aimPoint = aimPoint;
+    return true;
+}
+
+void VR_RenderPhysicalSniperScope(
+    const std::uint32_t eyeIndex,
+    const int32_t viewportWidth,
+    const int32_t viewportHeight,
+    const XrView& sourceView)
+{
+    if (eyeIndex >= g_vrViews.size() ||
+        eyeIndex >= g_vrBlitVertexBuffers.size() ||
+        viewportWidth <= 0 ||
+        viewportHeight <= 0 ||
+        !g_vrScopePixelShader ||
+        !g_vrScopeConstantBuffer ||
+        !g_vrCapturedStereoView)
+    {
+        return;
+    }
+
+    bool scopeActive = false;
+    float adsFraction = 0.0f;
+    float adsFovDegrees = 65.0f;
+
+    {
+        std::lock_guard<std::mutex> lock(
+            g_vrScopeStateMutex);
+
+        scopeActive = g_vrScopeActive;
+        adsFraction = g_vrScopeAdsFraction;
+        adsFovDegrees = g_vrScopeAdsFovDegrees;
+    }
+
+    if (!scopeActive ||
+        adsFraction <= 0.01f ||
+        adsFovDegrees <= 1.0f)
+    {
+        return;
+    }
+
+    VrScopeLensPoints lensPoints = {};
+    if (!VR_ComputeScopeLensPoints(&lensPoints))
+    {
+        return;
+    }
+
+    const XrVector3f& lensCenter = lensPoints.center;
+    const XrVector3f& lensRight = lensPoints.right;
+    const XrVector3f& lensUp = lensPoints.up;
+    const XrVector3f& aimPoint = lensPoints.aimPoint;
 
     // The captured source is now rendered with a centered symmetric
     // frustum.  Project its magnified sample through that same source
@@ -24762,6 +24794,103 @@ void VR_LogWinlatorXrDiagnostics(
 // thread. Frontend menus and centered modals are drawn into the left eye,
 // the active pause menu into the right eye, and cinematics across the whole
 // window.
+
+// Places the scope lens for WinlatorXR. The optic is positioned from the same
+// app-space points the OpenXR scope shader uses, projected into each eye, so
+// the two backends cannot drift apart. The quad is flat and already in eye
+// coordinates, so every grid point carries the same w.
+//
+// The lens is square for now; the circular mask the OpenXR shader applies has
+// no counterpart here yet.
+void VR_UpdateWinlatorXrScopeLens()
+{
+    VrWinlatorXr::ScopeLens lens;
+
+    VrScopeLensPoints points = {};
+
+    if (g_vrRuntimeBackend == VrRuntimeBackend::WinlatorXr &&
+        VR_IsPhysicalSniperScopeAimActive() &&
+        g_vrViews.size() >= kVrStereoEyeCount &&
+        VR_ComputeScopeLensPoints(&points))
+    {
+        constexpr std::size_t kCells =
+            VrWinlatorXr::VirtualScreen::kGridCells;
+
+        bool projected = true;
+
+        for (std::uint32_t eyeIndex = 0u;
+             eyeIndex < kVrStereoEyeCount && projected;
+             ++eyeIndex)
+        {
+            float centerX = 0.0f;
+            float centerY = 0.0f;
+            float rightX = 0.0f;
+            float rightY = 0.0f;
+            float upX = 0.0f;
+            float upY = 0.0f;
+
+            if (!VR_ProjectAppSpacePointToEye(
+                    points.center,
+                    g_vrViews[eyeIndex],
+                    &centerX,
+                    &centerY) ||
+                !VR_ProjectAppSpacePointToEye(
+                    points.right,
+                    g_vrViews[eyeIndex],
+                    &rightX,
+                    &rightY) ||
+                !VR_ProjectAppSpacePointToEye(
+                    points.up,
+                    g_vrViews[eyeIndex],
+                    &upX,
+                    &upY))
+            {
+                projected = false;
+                break;
+            }
+
+            // Clip space to eye-image coordinates; V grows downwards.
+            const float centerU = 0.5f * (centerX + 1.0f);
+            const float centerV = 0.5f * (1.0f - centerY);
+            const float basisRightU = 0.5f * (rightX + 1.0f) - centerU;
+            const float basisRightV = 0.5f * (1.0f - rightY) - centerV;
+            const float basisUpU = 0.5f * (upX + 1.0f) - centerU;
+            const float basisUpV = 0.5f * (1.0f - upY) - centerV;
+
+            for (std::size_t row = 0u; row <= kCells; ++row)
+            {
+                for (std::size_t column = 0u; column <= kCells; ++column)
+                {
+                    // Row 0 is the top edge, column 0 the left edge.
+                    const float sideways =
+                        2.0f * static_cast<float>(column) /
+                            static_cast<float>(kCells) - 1.0f;
+                    const float upward =
+                        1.0f - 2.0f * static_cast<float>(row) /
+                            static_cast<float>(kCells);
+
+                    std::array<float, 3>& point =
+                        lens.grid[eyeIndex][row * (kCells + 1u) + column];
+
+                    point[0] =
+                        centerU +
+                        basisRightU * sideways +
+                        basisUpU * upward;
+                    point[1] =
+                        centerV +
+                        basisRightV * sideways +
+                        basisUpV * upward;
+                    point[2] = 1.0f;
+                }
+            }
+        }
+
+        lens.active = projected;
+    }
+
+    VrWinlatorXr::SetScopeLens(lens);
+}
+
 void VR_UpdateWinlatorXrVirtualScreen(
     const XrPosef& headPose)
 {
@@ -25174,6 +25303,8 @@ void VR_FrameWinlatorXr()
 
     VR_UpdateWinlatorXrVirtualScreen(
         headPose);
+
+    VR_UpdateWinlatorXrScopeLens();
 
     {
         std::lock_guard<std::mutex> lock(
