@@ -7,7 +7,7 @@
 
 #include "win_steam.h"
 
-#include <Windows.h>
+#include <windows.h>
 
 #include <qcommon/qcommon.h>
 

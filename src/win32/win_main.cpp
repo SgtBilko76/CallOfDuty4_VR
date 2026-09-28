@@ -32,7 +32,7 @@ static void KisakCrash_SetFrameNumber(unsigned int) {}
 #include <io.h>
 #include <conio.h>
 
-#include <Windows.h>
+#include <windows.h>
 #include <tlhelp32.h>
 
 #include <client/client.h>

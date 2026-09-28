@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Windows.h>
+#include <windows.h>
 
 // KISAK_SP_VR_CRASH_DIAGNOSTICS_V48
 // Installs the crash recorder before engine, Steam, Direct3D, or OpenXR

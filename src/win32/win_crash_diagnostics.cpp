@@ -1,6 +1,6 @@
 #include "win_crash_diagnostics.h"
 
-#include <DbgHelp.h>
+#include <dbghelp.h>
 #include <Psapi.h>
 #include <TlHelp32.h>
 
