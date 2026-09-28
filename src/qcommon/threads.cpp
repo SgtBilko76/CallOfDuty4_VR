@@ -208,11 +208,17 @@ void __cdecl SetThreadName(uint32_t threadId, const char* threadName)
     TracyCSetThreadName(threadName);
 #endif
 
+#if defined(_MSC_VER)
     __try {
         RaiseException(MS_VC_EXCEPTION, 0, sizeof(info) / sizeof(ULONG_PTR), (ULONG_PTR*)&info);
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
     }
+#else
+    // The debugger learns a thread's name from an exception it swallows;
+    // without an SEH boundary to catch it, raising it would end the process.
+    (void)info;
+#endif
 }
 
 static uint32_t Sys_ThreadMainBody(ThreadContext_t threadContext)
@@ -232,6 +238,7 @@ uint32_t __stdcall Sys_ThreadMain(ThreadContext_t threadContext)
     // SetUnhandledExceptionFilter covers third-party threads. This explicit
     // boundary also preserves the exception context if Steam, OpenXR, or a
     // codec replaces the process-wide filter after startup.
+#if defined(_MSC_VER)
     __try
     {
         KisakCrash_PrepareCurrentThread(
@@ -254,6 +261,13 @@ uint32_t __stdcall Sys_ThreadMain(ThreadContext_t threadContext)
 
         return exceptionCode;
     }
+#else
+    // No SEH tables on this toolchain; see win_main.cpp.
+    KisakCrash_PrepareCurrentThread(
+        s_threadNames[threadContext]);
+
+    return Sys_ThreadMainBody(threadContext);
+#endif
 #else
     return Sys_ThreadMainBody(threadContext);
 #endif

@@ -520,10 +520,8 @@ void __cdecl SV_CheckLoadLevel(SaveGame *save)
     Hunk_CheckTempMemoryHighClear();
 }
 
-static void SV_FreeReliableCommandsForClient(client_t *cl)
-{
-    Com_Memset(&cl->reliableCommands, 0, 12);
-}
+// SV_FreeReliableCommandsForClient() is defined once elsewhere; this second definition linked
+// only because MSVC gave it internal linkage.
 static void SV_ShutdownGameVM(int clearScripts)
 {
     iassert(Sys_IsMainThread());

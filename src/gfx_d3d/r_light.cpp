@@ -9,6 +9,7 @@
 #include <database/database.h>
 #include "r_bsp.h"
 #include "r_marks.h"
+#include "r_shadowcookie.h" // R_SortBspShadowReceiverSurfaces
 
 #include <algorithm>
 #include "r_staticmodelcache.h"
@@ -261,11 +262,8 @@ void __cdecl R_GetBspLightSurfs(const GfxLight **visibleLights, int visibleCount
     }
 }
 
-BOOL __cdecl R_SortBspShadowReceiverSurfaces(GfxSurface *surface0, GfxSurface *surface1)
-{
-    return surface0 < surface1;
-}
-
+// R_SortBspShadowReceiverSurfaces() is defined once elsewhere; this second definition linked
+// only because MSVC gave it internal linkage.
 void __cdecl R_GetBspOmniLightSurfs(const GfxLight *light, int lightIndex, GfxBspDrawSurfData *surfData)
 {
     uint16_t triSurfList[2]; // [esp+F0h] [ebp-4Ch] BYREF

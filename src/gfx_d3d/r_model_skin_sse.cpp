@@ -5,6 +5,38 @@
 
 #include <xmmintrin.h>
 
+// MSVC's __m128 is a union with named integer lanes; clang's is a vector type
+// with no members at all. Read the lanes through a copy so the call sites can
+// stay identical for both compilers.
+#if defined(_MSC_VER)
+#define KISAK_M128_U32(v, i) ((v).m128_u32[i])
+#define KISAK_M64_U64(v) ((v).m64_u64)
+#define KISAK_M128_U64(v, i) ((v).m128_u64[i])
+#else
+static inline unsigned int KisakM128U32(const __m128 &v, int i)
+{
+    unsigned int lanes[4];
+    __builtin_memcpy(lanes, &v, sizeof(lanes));
+    return lanes[i];
+}
+static inline unsigned long long KisakM128U64(const __m128 &v, int i)
+{
+    unsigned long long lanes[2];
+    __builtin_memcpy(lanes, &v, sizeof(lanes));
+    return lanes[i];
+}
+static inline unsigned long long KisakM64U64(const __m64 &v)
+{
+    unsigned long long value;
+    __builtin_memcpy(&value, &v, sizeof(value));
+    return value;
+}
+#define KISAK_M64_U64(v) KisakM64U64(v)
+#define KISAK_M128_U32(v, i) KisakM128U32((v), (i))
+#define KISAK_M128_U64(v, i) KisakM128U64((v), (i))
+#endif
+
+
 __m128 sse_weightScale =
 { 0.000015258789f, 0.000015258789f, 0.000015258789f, 0.000015258789f };
 
@@ -61,7 +93,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlockInOut_3_Sse_SkinVertexSimple_1_(
         _mm_prefetch((const char *)&v20[8], 0);
         _mm_prefetch((const char *)&v19[16], 0);
         normalTangent_4 = *v20;
-        v17 = (__m64)v20[1].m128_u64[0];
+        v17 = (__m64)KISAK_M128_U64(v20[1], 0);
         v16 = *(__m64 *)v19;
         v14 = _mm_add_ps(
             _mm_add_ps(
@@ -141,7 +173,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlockInOut_1_Sse_SkinVertexSimple_0_(
         _mm_prefetch((const char *)&v14[8], 0);
         _mm_prefetch((const char *)&v13[16], 0);
         normalTangent_4 = *v14;
-        v11 = (__m64)v14[1].m128_u64[0];
+        v11 = (__m64)KISAK_M128_U64(v14[1], 0);
         v10 = *(__m64 *)v13;
         v9 = _mm_add_ps(
             _mm_add_ps(
@@ -220,7 +252,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlockInOut_5_Sse_SkinVertexSimple_2_(
         _mm_prefetch((const char *)&v30[8], 0);
         _mm_prefetch((const char *)&v29[16], 0);
         normalTangent_4 = *v30;
-        v27 = (__m64)v30[1].m128_u64[0];
+        v27 = (__m64)KISAK_M128_U64(v30[1], 0);
         v26 = *(__m64 *)v29;
         v23 = _mm_add_ps(
             _mm_add_ps(
@@ -338,7 +370,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlockInOut_7_Sse_SkinVertexSimple_3_(
         _mm_prefetch((const char *)&v38[8], 0);
         _mm_prefetch((const char *)&v37[16], 0);
         normalTangent_4 = *v38;
-        v35 = (__m64)v38[1].m128_u64[0];
+        v35 = (__m64)KISAK_M128_U64(v38[1], 0);
         v34 = *(__m64 *)v37;
         v30 = _mm_add_ps(
             _mm_add_ps(
@@ -523,8 +555,8 @@ void __cdecl R_SkinXSurfaceRigidSseInOut(
         {
             _mm_prefetch((const char *)&vertexNormal[8], 0);
             _mm_prefetch((const char *)&srcVertNormals[16], 0);
-            v8 = (__m64)vertexNormal[1].m128_u64[0];
-            m64_u64 = (__m64)srcVertNormals->m64_u64;
+            v8 = (__m64)KISAK_M128_U64(vertexNormal[1], 0);
+            m64_u64 = (__m64)KISAK_M64_U64(*srcVertNormals);
             v6 = _mm_add_ps(
                 _mm_add_ps(
                     _mm_mul_ps(v10, _mm_shuffle_ps(*vertexNormal, *vertexNormal, 0)),
@@ -591,8 +623,8 @@ void __cdecl R_SkinXSurfaceWeightSseBlockOut_1_Sse_SkinVertex_0_(
     {
         v26 = (__m128 *) & srcVerts[(_DWORD)v];
         _mm_prefetch((const char *)&v26[8], 0);
-        v25 = (__m64)v26[1].m128_u64[0];
-        v24 = v26[1].m128_u32[3];
+        v25 = (__m64)KISAK_M128_U64(v26[1], 0);
+        v24 = KISAK_M128_U32(v26[1], 3);
         v23 = (__m128 *)((char *)boneMatrix + *vertexBlend);
         v19 = *v23;
         v20 = v23[1];
@@ -603,7 +635,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlockOut_1_Sse_SkinVertex_0_(
             _mm_add_ps(_mm_mul_ps(v21, _mm_shuffle_ps(*v26, *v26, 170)), v22));
         v17 = _mm_shuffle_ps(v18, _mm_unpackhi_ps(v18, *v26), 196);
         v15 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v26[1].m128_u32[2]), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(KISAK_M128_U32(v26[1], 2)), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v14 = _mm_mul_ps(v15, _mm_shuffle_ps(v15, v15, 255));
         v13 = _mm_add_ps(
@@ -611,7 +643,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlockOut_1_Sse_SkinVertex_0_(
             _mm_mul_ps(v21, _mm_shuffle_ps(v14, v14, 170)));
         v16 = _mm_add_ps(_mm_mul_ps(_mm_shuffle_ps(v13, _mm_unpackhi_ps(v13, v22), 196), sse_encodeScale), sse_encodeShift);
         v11 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v24), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v24), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v10 = _mm_mul_ps(v11, _mm_shuffle_ps(v11, v11, 255));
         v9 = _mm_add_ps(
@@ -684,8 +716,8 @@ void __cdecl R_SkinXSurfaceWeightSseBlockOut_3_Sse_SkinVertex_1_(
         v32 = (__m128 *) & srcVerts[(_DWORD)v];
         _mm_prefetch((const char *)&v32[8], 0);
         inNormal = *v32;
-        v30 = (__m64)v32[1].m128_u64[0];
-        v29 = v32[1].m128_u32[3];
+        v30 = (__m64)KISAK_M128_U64(v32[1], 0);
+        v29 = KISAK_M128_U32(v32[1], 3);
         v27 = (__m128 *)((char *)boneMatrix + *vertexBlend);
         v23 = *v27;
         v24 = v27[1];
@@ -698,7 +730,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlockOut_3_Sse_SkinVertex_1_(
             _mm_add_ps(_mm_mul_ps(v25, _mm_shuffle_ps(inNormal, inNormal, 170)), v26));
         v21 = _mm_shuffle_ps(v22, _mm_unpackhi_ps(v22, *v32), 196);
         v19 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v32[1].m128_u32[2]), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(KISAK_M128_U32(v32[1], 2)), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v18 = _mm_mul_ps(v19, _mm_shuffle_ps(v19, v19, 255));
         v17 = _mm_add_ps(
@@ -706,7 +738,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlockOut_3_Sse_SkinVertex_1_(
             _mm_mul_ps(v25, _mm_shuffle_ps(v18, v18, 170)));
         v20 = _mm_add_ps(_mm_mul_ps(_mm_shuffle_ps(v17, _mm_unpackhi_ps(v17, v26), 196), sse_encodeScale), sse_encodeShift);
         v15 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v29), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v29), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v14 = _mm_mul_ps(v15, _mm_shuffle_ps(v15, v15, 255));
         v13 = _mm_add_ps(
@@ -804,8 +836,8 @@ void __cdecl R_SkinXSurfaceWeightSseBlockOut_5_Sse_SkinVertex_2_(
         v41 = (__m128 *) & srcVerts[(_DWORD)v];
         _mm_prefetch((const char *)&v41[8], 0);
         inNormal = *v41;
-        v39 = (__m64)v41[1].m128_u64[0];
-        v38 = v41[1].m128_u32[3];
+        v39 = (__m64)KISAK_M128_U64(v41[1], 0);
+        v38 = KISAK_M128_U32(v41[1], 3);
         v35 = (__m128 *)((char *)boneMatrix + *vertexBlend);
         v31 = *v35;
         v32 = v35[1];
@@ -817,14 +849,14 @@ void __cdecl R_SkinXSurfaceWeightSseBlockOut_5_Sse_SkinVertex_2_(
                 _mm_mul_ps(v32, _mm_shuffle_ps(inNormal, inNormal, 85))),
             _mm_add_ps(_mm_mul_ps(v33, _mm_shuffle_ps(inNormal, inNormal, 170)), v34));
         v29 = _mm_shuffle_ps(v30, _mm_unpackhi_ps(v30, *v41), 196);
-        v27 = _mm_div_ps(_mm_sub_ps(_mm_cvtpu8_ps(_mm_cvtsi32_si64(v41[1].m128_u32[2])), sse_encodeShift), sse_encodeScale);
+        v27 = _mm_div_ps(_mm_sub_ps(_mm_cvtpu8_ps(_mm_cvtsi32_si64(KISAK_M128_U32(v41[1], 2))), sse_encodeShift), sse_encodeScale);
         v26 = _mm_mul_ps(v27, _mm_shuffle_ps(v27, v27, 255));
         v25 = _mm_add_ps(
             _mm_add_ps(_mm_mul_ps(v31, _mm_shuffle_ps(v26, v26, 0)), _mm_mul_ps(v32, _mm_shuffle_ps(v26, v26, 85))),
             _mm_mul_ps(v33, _mm_shuffle_ps(v26, v26, 170)));
         v28 = _mm_add_ps(_mm_mul_ps(_mm_shuffle_ps(v25, _mm_unpackhi_ps(v25, v34), 196), sse_encodeScale), sse_encodeShift);
         v23 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v38), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v38), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v22 = _mm_mul_ps(v23, _mm_shuffle_ps(v23, v23, 255));
         v21 = _mm_add_ps(
@@ -941,8 +973,8 @@ void __cdecl R_SkinXSurfaceWeightSseBlockOut_7_Sse_SkinVertex_3_(
         v49 = (__m128 *) & srcVerts[(_DWORD)v];
         _mm_prefetch((const char *)&v49[8], 0);
         inNormal = *v49;
-        v47 = (__m64)v49[1].m128_u64[0];
-        v46 = v49[1].m128_u32[3];
+        v47 = (__m64)KISAK_M128_U64(v49[1], 0);
+        v46 = KISAK_M128_U32(v49[1], 3);
         v42 = (__m128 *)((char *)boneMatrix + *vertexBlend);
         v38 = *v42;
         v39 = v42[1];
@@ -954,14 +986,14 @@ void __cdecl R_SkinXSurfaceWeightSseBlockOut_7_Sse_SkinVertex_3_(
                 _mm_mul_ps(v39, _mm_shuffle_ps(inNormal, inNormal, 85))),
             _mm_add_ps(_mm_mul_ps(v40, _mm_shuffle_ps(inNormal, inNormal, 170)), v41));
         v36 = _mm_shuffle_ps(v37, _mm_unpackhi_ps(v37, *v49), 196);
-        v34 = _mm_div_ps(_mm_sub_ps(_mm_cvtpu8_ps(_mm_cvtsi32_si64(v49[1].m128_u32[2])), sse_encodeShift), sse_encodeScale);
+        v34 = _mm_div_ps(_mm_sub_ps(_mm_cvtpu8_ps(_mm_cvtsi32_si64(KISAK_M128_U32(v49[1], 2))), sse_encodeShift), sse_encodeScale);
         v33 = _mm_mul_ps(v34, _mm_shuffle_ps(v34, v34, 255));
         v32 = _mm_add_ps(
             _mm_add_ps(_mm_mul_ps(v38, _mm_shuffle_ps(v33, v33, 0)), _mm_mul_ps(v39, _mm_shuffle_ps(v33, v33, 85))),
             _mm_mul_ps(v40, _mm_shuffle_ps(v33, v33, 170)));
         v35 = _mm_add_ps(_mm_mul_ps(_mm_shuffle_ps(v32, _mm_unpackhi_ps(v32, v41), 196), sse_encodeScale), sse_encodeShift);
         v30 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v46), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v46), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v29 = _mm_mul_ps(v30, _mm_shuffle_ps(v30, v30, 255));
         v28 = _mm_add_ps(
@@ -1141,14 +1173,14 @@ void __cdecl R_SkinXSurfaceRigidSseOut(
         while (v18 < matrix_56)
         {
             _mm_prefetch((const char *)&i[8], 0);
-            v17 = (__m64)i[1].m128_u64[0];
-            v16 = i[1].m128_u32[3];
+            v17 = (__m64)KISAK_M128_U64(i[1], 0);
+            v16 = KISAK_M128_U32(i[1], 3);
             v15 = _mm_add_ps(
                 _mm_add_ps(_mm_mul_ps(v19, _mm_shuffle_ps(*i, *i, 0)), _mm_mul_ps(matrix_4, _mm_shuffle_ps(*i, *i, 85))),
                 _mm_add_ps(_mm_mul_ps(matrix_20, _mm_shuffle_ps(*i, *i, 170)), matrix_36));
             v14 = _mm_shuffle_ps(v15, _mm_unpackhi_ps(v15, *i), 196);
             v12 = _mm_div_ps(
-                _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(i[1].m128_u32[2]), (__m64)0)), sse_encodeShift),
+                _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(KISAK_M128_U32(i[1], 2)), _mm_setzero_si64())), sse_encodeShift),
                 sse_encodeScale);
             v11 = _mm_mul_ps(v12, _mm_shuffle_ps(v12, v12, 255));
             v10 = _mm_add_ps(
@@ -1160,7 +1192,7 @@ void __cdecl R_SkinXSurfaceRigidSseOut(
                 _mm_mul_ps(_mm_shuffle_ps(v10, _mm_unpackhi_ps(v10, matrix_36), 196), sse_encodeScale),
                 sse_encodeShift);
             v8 = _mm_div_ps(
-                _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v16), (__m64)0)), sse_encodeShift),
+                _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v16), _mm_setzero_si64())), sse_encodeShift),
                 sse_encodeScale);
             v7 = _mm_mul_ps(v8, _mm_shuffle_ps(v8, v8, 255));
             v6 = _mm_add_ps(
@@ -1226,8 +1258,8 @@ void __cdecl R_SkinXSurfaceWeightSseBlock_1_Sse_SkinVertex_0_(
     {
         v24 = (__m128 *) & srcVerts[(_DWORD)v];
         _mm_prefetch((const char *)&v24[8], 0);
-        v23 = (__m64)v24[1].m128_u64[0];
-        v22 = v24[1].m128_u32[3];
+        v23 = (__m64)KISAK_M128_U64(v24[1], 0);
+        v22 = KISAK_M128_U32(v24[1], 3);
         v21 = (__m128 *)((char *)boneMatrix + *vertexBlend);
         v17 = *v21;
         v18 = v21[1];
@@ -1238,7 +1270,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlock_1_Sse_SkinVertex_0_(
             _mm_add_ps(_mm_mul_ps(v19, _mm_shuffle_ps(*v24, *v24, 170)), v20));
         v15 = _mm_shuffle_ps(v16, _mm_unpackhi_ps(v16, *v24), 196);
         v13 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v24[1].m128_u32[2]), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(KISAK_M128_U32(v24[1], 2)), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v12 = _mm_mul_ps(v13, _mm_shuffle_ps(v13, v13, 255));
         v11 = _mm_add_ps(
@@ -1246,7 +1278,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlock_1_Sse_SkinVertex_0_(
             _mm_mul_ps(v19, _mm_shuffle_ps(v12, v12, 170)));
         v14 = _mm_add_ps(_mm_mul_ps(_mm_shuffle_ps(v11, _mm_unpackhi_ps(v11, v20), 196), sse_encodeScale), sse_encodeShift);
         v9 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v22), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v22), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v8 = _mm_mul_ps(v9, _mm_shuffle_ps(v9, v9, 255));
         v7 = _mm_add_ps(
@@ -1315,8 +1347,8 @@ void __cdecl R_SkinXSurfaceWeightSseBlock_3_Sse_SkinVertex_1_(
         v30 = (__m128 *) & srcVerts[(_DWORD)v];
         _mm_prefetch((const char *)&v30[8], 0);
         inNormal = *v30;
-        v28 = (__m64)v30[1].m128_u64[0];
-        v27 = v30[1].m128_u32[3];
+        v28 = (__m64)KISAK_M128_U64(v30[1], 0);
+        v27 = KISAK_M128_U32(v30[1], 3);
         v25 = (__m128 *)((char *)boneMatrix + *vertexBlend);
         v21 = *v25;
         v22 = v25[1];
@@ -1329,7 +1361,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlock_3_Sse_SkinVertex_1_(
             _mm_add_ps(_mm_mul_ps(v23, _mm_shuffle_ps(inNormal, inNormal, 170)), v24));
         v19 = _mm_shuffle_ps(v20, _mm_unpackhi_ps(v20, *v30), 196);
         v17 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v30[1].m128_u32[2]), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(KISAK_M128_U32(v30[1], 2)), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v16 = _mm_mul_ps(v17, _mm_shuffle_ps(v17, v17, 255));
         v15 = _mm_add_ps(
@@ -1337,7 +1369,7 @@ void __cdecl R_SkinXSurfaceWeightSseBlock_3_Sse_SkinVertex_1_(
             _mm_mul_ps(v23, _mm_shuffle_ps(v16, v16, 170)));
         v18 = _mm_add_ps(_mm_mul_ps(_mm_shuffle_ps(v15, _mm_unpackhi_ps(v15, v24), 196), sse_encodeScale), sse_encodeShift);
         v13 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v27), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v27), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v12 = _mm_mul_ps(v13, _mm_shuffle_ps(v13, v13, 255));
         v11 = _mm_add_ps(
@@ -1430,8 +1462,8 @@ void __cdecl R_SkinXSurfaceWeightSseBlock_5_Sse_SkinVertex_2_(
         v39 = (__m128 *) & srcVerts[(_DWORD)v];
         _mm_prefetch((const char *)&v39[8], 0);
         inNormal = *v39;
-        v37 = (__m64)v39[1].m128_u64[0];
-        v36 = v39[1].m128_u32[3];
+        v37 = (__m64)KISAK_M128_U64(v39[1], 0);
+        v36 = KISAK_M128_U32(v39[1], 3);
         v33 = (__m128 *)((char *)boneMatrix + *vertexBlend);
         v29 = *v33;
         v30 = v33[1];
@@ -1443,14 +1475,14 @@ void __cdecl R_SkinXSurfaceWeightSseBlock_5_Sse_SkinVertex_2_(
                 _mm_mul_ps(v30, _mm_shuffle_ps(inNormal, inNormal, 85))),
             _mm_add_ps(_mm_mul_ps(v31, _mm_shuffle_ps(inNormal, inNormal, 170)), v32));
         v27 = _mm_shuffle_ps(v28, _mm_unpackhi_ps(v28, *v39), 196);
-        v25 = _mm_div_ps(_mm_sub_ps(_mm_cvtpu8_ps(_mm_cvtsi32_si64(v39[1].m128_u32[2])), sse_encodeShift), sse_encodeScale);
+        v25 = _mm_div_ps(_mm_sub_ps(_mm_cvtpu8_ps(_mm_cvtsi32_si64(KISAK_M128_U32(v39[1], 2))), sse_encodeShift), sse_encodeScale);
         v24 = _mm_mul_ps(v25, _mm_shuffle_ps(v25, v25, 255));
         v23 = _mm_add_ps(
             _mm_add_ps(_mm_mul_ps(v29, _mm_shuffle_ps(v24, v24, 0)), _mm_mul_ps(v30, _mm_shuffle_ps(v24, v24, 85))),
             _mm_mul_ps(v31, _mm_shuffle_ps(v24, v24, 170)));
         v26 = _mm_add_ps(_mm_mul_ps(_mm_shuffle_ps(v23, _mm_unpackhi_ps(v23, v32), 196), sse_encodeScale), sse_encodeShift);
         v21 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v36), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v36), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v20 = _mm_mul_ps(v21, _mm_shuffle_ps(v21, v21, 255));
         v19 = _mm_add_ps(
@@ -1563,8 +1595,8 @@ void __cdecl R_SkinXSurfaceWeightSseBlock_7_Sse_SkinVertex_3_(
         v47 = (__m128 *) & srcVerts[(_DWORD)v];
         _mm_prefetch((const char *)&v47[8], 0);
         inNormal = *v47;
-        v45 = (__m64)v47[1].m128_u64[0];
-        v44 = v47[1].m128_u32[3];
+        v45 = (__m64)KISAK_M128_U64(v47[1], 0);
+        v44 = KISAK_M128_U32(v47[1], 3);
         v40 = (__m128 *)((char *)boneMatrix + *vertexBlend);
         v36 = *v40;
         v37 = v40[1];
@@ -1576,14 +1608,14 @@ void __cdecl R_SkinXSurfaceWeightSseBlock_7_Sse_SkinVertex_3_(
                 _mm_mul_ps(v37, _mm_shuffle_ps(inNormal, inNormal, 85))),
             _mm_add_ps(_mm_mul_ps(v38, _mm_shuffle_ps(inNormal, inNormal, 170)), v39));
         v34 = _mm_shuffle_ps(v35, _mm_unpackhi_ps(v35, *v47), 196);
-        v32 = _mm_div_ps(_mm_sub_ps(_mm_cvtpu8_ps(_mm_cvtsi32_si64(v47[1].m128_u32[2])), sse_encodeShift), sse_encodeScale);
+        v32 = _mm_div_ps(_mm_sub_ps(_mm_cvtpu8_ps(_mm_cvtsi32_si64(KISAK_M128_U32(v47[1], 2))), sse_encodeShift), sse_encodeScale);
         v31 = _mm_mul_ps(v32, _mm_shuffle_ps(v32, v32, 255));
         v30 = _mm_add_ps(
             _mm_add_ps(_mm_mul_ps(v36, _mm_shuffle_ps(v31, v31, 0)), _mm_mul_ps(v37, _mm_shuffle_ps(v31, v31, 85))),
             _mm_mul_ps(v38, _mm_shuffle_ps(v31, v31, 170)));
         v33 = _mm_add_ps(_mm_mul_ps(_mm_shuffle_ps(v30, _mm_unpackhi_ps(v30, v39), 196), sse_encodeScale), sse_encodeShift);
         v28 = _mm_div_ps(
-            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v44), (__m64)0)), sse_encodeShift),
+            _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v44), _mm_setzero_si64())), sse_encodeShift),
             sse_encodeScale);
         v27 = _mm_mul_ps(v28, _mm_shuffle_ps(v28, v28, 255));
         v26 = _mm_add_ps(
@@ -1752,8 +1784,8 @@ void __cdecl R_SkinXSurfaceRigidSse(
         for (i = 0; i < matrix_60; ++i)
         {
             _mm_prefetch((const char *)&vertList[8], 0);
-            v15 = (__m64)vertList[1].m128_u64[0];
-            v14 = vertList[1].m128_u32[3];
+            v15 = (__m64)KISAK_M128_U64(vertList[1], 0);
+            v14 = KISAK_M128_U32(vertList[1], 3);
             v13 = _mm_add_ps(
                 _mm_add_ps(
                     _mm_mul_ps(v17, _mm_shuffle_ps(*vertList, *vertList, 0)),
@@ -1761,7 +1793,7 @@ void __cdecl R_SkinXSurfaceRigidSse(
                 _mm_add_ps(_mm_mul_ps(matrix_20, _mm_shuffle_ps(*vertList, *vertList, 170)), matrix_36));
             v12 = _mm_shuffle_ps(v13, _mm_unpackhi_ps(v13, *vertList), 196);
             v10 = _mm_div_ps(
-                _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(vertList[1].m128_u32[2]), (__m64)0)), sse_encodeShift),
+                _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(KISAK_M128_U32(vertList[1], 2)), _mm_setzero_si64())), sse_encodeShift),
                 sse_encodeScale);
             v9 = _mm_mul_ps(v10, _mm_shuffle_ps(v10, v10, 255));
             v8 = _mm_add_ps(
@@ -1771,7 +1803,7 @@ void __cdecl R_SkinXSurfaceRigidSse(
                 _mm_mul_ps(_mm_shuffle_ps(v8, _mm_unpackhi_ps(v8, matrix_36), 196), sse_encodeScale),
                 sse_encodeShift);
             v6 = _mm_div_ps(
-                _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v14), (__m64)0)), sse_encodeShift),
+                _mm_sub_ps(_mm_cvtpu16_ps(_m_punpcklbw(_mm_cvtsi32_si64(v14), _mm_setzero_si64())), sse_encodeShift),
                 sse_encodeScale);
             v5 = _mm_mul_ps(v6, _mm_shuffle_ps(v6, v6, 255));
             v4 = _mm_add_ps(
