@@ -1,8 +1,8 @@
 #include "win_crash_diagnostics.h"
 
 #include <dbghelp.h>
-#include <Psapi.h>
-#include <TlHelp32.h>
+#include <psapi.h>
+#include <tlhelp32.h>
 
 #include <atomic>
 #include <cstdarg>
