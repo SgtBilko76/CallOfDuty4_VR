@@ -89,9 +89,14 @@ target_link_directories(${PROJECT_NAME} PUBLIC "${DEPS_DIR}/steamsdk")
 target_link_directories(${PROJECT_NAME} PUBLIC "${DEPS_DIR}/binklib")
 
 #Enable PDB for "Release" Build. (There is also RelWithDebInfo, but it has different settings)
-target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/DEBUG>")
-target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/OPT:REF>")
-target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/OPT:ICF>")
+# MSVC linker options; clang reads a leading slash as a path, and only a
+# Release configuration passes them, which is why the debug cross build did
+# not trip over these.
+if (MSVC)
+  target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/DEBUG>")
+  target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/OPT:REF>")
+  target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/OPT:ICF>")
+endif()
 
 # An MSVC linker option; the cross build gets its architecture from the
 # toolchain triple.
