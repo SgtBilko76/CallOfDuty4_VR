@@ -80,6 +80,15 @@ void SetVirtualScreen(const VirtualScreen& screen);
 
 } // namespace kisak::vr::winlatorxr
 
+// Copies the scope panel out of the render target while the command list is
+// being replayed, after the scope camera's view and before the eye views
+// repaint that part of the window. Called from RB_VrCaptureScopePanelCmd.
+void VR_WinlatorXrCaptureScopePanel(
+    IDirect3DDevice9* device,
+    int panelX,
+    int panelY,
+    int panelSize);
+
 // Called by the D3D9 capture hook immediately before Present() while direct
 // presentation is enabled. Stamps the frame's HMD_SYNC pixel.
 void VR_WinlatorXrBeforePresent(

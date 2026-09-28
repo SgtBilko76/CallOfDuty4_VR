@@ -82,6 +82,11 @@ void VR_SetPhysicalSniperScopeState(
 // converge the physical muzzle ray on the reticle target.
 bool VR_IsPhysicalSniperScopeAimActive();
 
+// True while the WinlatorXR backend is driving the session. Its scope panel
+// lives inside the window rather than beside the eyes, so it has to be copied
+// out mid-frame; see vr_packed_layout.h.
+bool VR_IsWinlatorXrBackendActive();
+
 // Publishes the final rendered viewmodel optic pose.  The compositor uses
 // the grip-relative anchor to keep the lens rigidly attached to the rifle;
 // the SP game uses the world-space ray for ballistic convergence.

@@ -26331,6 +26331,12 @@ bool VR_IsPhysicalSniperScopeAimActive()
     return g_vrScopeActive;
 }
 
+bool VR_IsWinlatorXrBackendActive()
+{
+    return g_vrRuntimeBackend ==
+        VrRuntimeBackend::WinlatorXr;
+}
+
 bool VR_GetPhysicalSniperScopeCaptureLayout(
     const int backbufferWidth,
     const int backbufferHeight,
