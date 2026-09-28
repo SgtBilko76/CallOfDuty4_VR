@@ -14,8 +14,15 @@
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR x86)
 
+# Prefer the msvcrt flavour. The ucrt one makes the binary import the
+# api-ms-win-crt-*.dll forwarders, which the MSVC build (linked /MT) does not
+# need and which a Wine container is not guaranteed to ship; the loader then
+# fails before main and the game logs nothing.
 if(NOT KISAK_MINGW_ROOT)
-    file(GLOB _mingw_roots "$ENV{HOME}/toolchains/llvm-mingw-*")
+    file(GLOB _mingw_roots "$ENV{HOME}/toolchains/llvm-mingw-*msvcrt*")
+    if(NOT _mingw_roots)
+        file(GLOB _mingw_roots "$ENV{HOME}/toolchains/llvm-mingw-*")
+    endif()
     list(SORT _mingw_roots COMPARE NATURAL ORDER DESCENDING)
     if(_mingw_roots)
         list(GET _mingw_roots 0 KISAK_MINGW_ROOT)
@@ -47,3 +54,7 @@ set(KISAK_MINGW_MS_FLAGS
     "-fms-extensions -fdeclspec -fasm-blocks -Wno-c++11-narrowing")
 set(CMAKE_C_FLAGS_INIT   "${KISAK_MINGW_MS_FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${KISAK_MINGW_MS_FLAGS}")
+
+# Static libc++ and libunwind, so the game folder needs no runtime DLLs
+# beside the executable, matching how the MSVC build ships.
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-static")
