@@ -997,6 +997,7 @@ int WINAPI WinMain(
 	// KISAK_SP_VR_CRASH_DIAGNOSTICS_V48
 	// Keep the SEH boundary in a trivial wrapper so MSVC can unwind normal C++
 	// code inside Kisak_WinMainImpl while still preserving the faulting context.
+#if defined(_MSC_VER)
 	__try
 	{
 		KisakCrash_Install(lpCmdLine);
@@ -1018,6 +1019,17 @@ int WINAPI WinMain(
 			? static_cast<int>(exceptionCode)
 			: -1;
 	}
+#else
+	// llvm-mingw cannot emit MSVC SEH tables on i686, so the cross build runs
+	// without this boundary. The shipping MSVC build keeps it.
+	KisakCrash_Install(lpCmdLine);
+
+	return Kisak_WinMainImpl(
+		hInstance,
+		hPrevInstance,
+		lpCmdLine,
+		nCmdShow);
+#endif
 }
 #endif
 

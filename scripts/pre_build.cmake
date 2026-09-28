@@ -93,7 +93,11 @@ target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/DEBUG>")
 target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/OPT:REF>")
 target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Release>:/OPT:ICF>")
 
-target_link_options(${PROJECT_NAME} PRIVATE /machine:x86)
+# An MSVC linker option; the cross build gets its architecture from the
+# toolchain triple.
+if (MSVC)
+  target_link_options(${PROJECT_NAME} PRIVATE /machine:x86)
+endif()
 set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC
