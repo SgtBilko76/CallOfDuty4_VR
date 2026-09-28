@@ -738,7 +738,7 @@ alignas(2) static const short yy_accept[260] =
 	0, 0 // LWSS: alignment
 };
 
-const alignas(4) int yy_ec[256] =
+alignas(4) const int yy_ec[256] =
 {
   0,
   1,
