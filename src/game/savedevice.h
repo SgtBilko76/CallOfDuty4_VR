@@ -11,6 +11,8 @@ static const char *CONSOLE_DEFAULT_SAVE_NAME = "savegame.svg";
 void __cdecl Memcard_InitializeSystem(void);
 void __cdecl SaveDevice_Init(void);
 void __cdecl SV_DisplaySaveErrorUI(void);
+// Must match the definition in server/server.h.
+enum SaveType : __int32;
 bool __cdecl BuildCleanSavePath(char *, unsigned int, char const *, enum SaveType);
 bool __cdecl SaveDevice_IsAccessingDevice(void);
 void __cdecl WriteSaveToDeviceCleanup(void);

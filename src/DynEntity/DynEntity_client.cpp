@@ -1,6 +1,6 @@
 #include <qcommon/qcommon.h>
 
-#include "dynentity_client.h"
+#include "DynEntity_client.h"
 #include <gfx_d3d/r_scene.h>
 #include <cgame/cg_local.h>
 #include <EffectsCore/fx_system.h>

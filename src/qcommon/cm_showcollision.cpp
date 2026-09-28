@@ -2,7 +2,7 @@
 #include "mem_track.h"
 #include <xanim/xanim.h>
 
-#include <Windows.h>
+#include <windows.h>
 
 
 uint8_t windingPool[12292];
