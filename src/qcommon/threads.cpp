@@ -1,6 +1,6 @@
 #include "threads.h"
 
-#include <Windows.h>
+#include <windows.h>
 
 #include <universal/assertive.h>
 

@@ -1398,7 +1398,9 @@ struct KeywordHashEntry
     }
     int KeywordHash_PickSeed(int count)
     {
-        for (int seed = 0; !IsValidSeed(count, HASH_SEED); seed++)
+        // The member is KeywordHash_IsValidSeed; MSVC never caught the wrong
+        // name here because this template is never instantiated.
+        for (int seed = 0; !KeywordHash_IsValidSeed(count, HASH_SEED); seed++)
         {
             iassert(seed != 65536);
         }
