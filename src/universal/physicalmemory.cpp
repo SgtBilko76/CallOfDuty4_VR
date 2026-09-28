@@ -1,6 +1,6 @@
 #include "physicalmemory.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include "assertive.h"
 #include <qcommon/mem_track.h>
 #include "q_shared.h"

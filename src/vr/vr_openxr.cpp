@@ -23,7 +23,7 @@ void __cdecl UI_MouseEvent(int localClientNum, int x, int y);
 #include "qcommon/qcommon.h"
 #include "win32/win_crash_diagnostics.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dxgi.h>
