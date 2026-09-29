@@ -14133,6 +14133,128 @@ void VR_SendMenuKeyTap(
         eventTime);
 }
 
+// KISAK_SP_VR_GAMEPAD_MENU_NAVIGATION
+// The frontend used to be driven by a stick-steered virtual mouse: the stick
+// pushed a cursor around and confirm sent K_MOUSE1 at whatever the cursor
+// happened to cover. In the headset that cursor is hard to place and it
+// overlays the controller input, so the menus are driven the way a gamepad
+// drives them instead -- the stick taps the arrow keys with an initial delay
+// and a repeat, and confirm sends Enter. Set KISAK_VR_MENU_GAMEPAD=0 to get
+// the old cursor back.
+bool VR_UsesGamepadMenuNavigation()
+{
+    static const bool enabled = []() {
+        const char* const requested =
+            std::getenv("KISAK_VR_MENU_GAMEPAD");
+
+        return requested == nullptr || requested[0] != '0';
+    }();
+
+    return enabled;
+}
+
+// Menu key numbers. Spelled out here the way the surrounding code spells
+// K_MOUSE1 and K_ESCAPE, rather than pulling in ui/keycodes.h.
+constexpr int kVrMenuKeyEnter = 0x0D;
+constexpr int kVrMenuKeyUpArrow = 0x9A;
+constexpr int kVrMenuKeyDownArrow = 0x9B;
+constexpr int kVrMenuKeyLeftArrow = 0x9C;
+constexpr int kVrMenuKeyRightArrow = 0x9D;
+
+void VR_UpdateGamepadMenuNavigation(
+    const float stickX,
+    const float stickY,
+    const bool stickValid,
+    const std::uint32_t currentTime)
+{
+    // A push past the deadzone steps one item; holding repeats, the way a
+    // gamepad repeats in a menu. The deadzone is well past the gameplay one
+    // so a resting thumb cannot walk the selection on its own.
+    constexpr float navigateDeadzone = 0.55f;
+    constexpr std::uint32_t firstRepeatDelayMilliseconds = 400u;
+    constexpr std::uint32_t repeatIntervalMilliseconds = 150u;
+
+    static int heldDirectionX = 0;
+    static int heldDirectionY = 0;
+    static std::uint32_t nextRepeatTime = 0u;
+
+    int directionX = 0;
+    int directionY = 0;
+
+    if (stickValid)
+    {
+        if (stickX >= navigateDeadzone)
+        {
+            directionX = 1;
+        }
+        else if (stickX <= -navigateDeadzone)
+        {
+            directionX = -1;
+        }
+
+        // OpenXR stick +Y is up, and the first menu item is at the top.
+        if (stickY >= navigateDeadzone)
+        {
+            directionY = -1;
+        }
+        else if (stickY <= -navigateDeadzone)
+        {
+            directionY = 1;
+        }
+    }
+
+    // A vertical push wins: menus are lists, and a diagonal push should not
+    // drag a slider while it is moving the selection.
+    if (directionY != 0)
+    {
+        directionX = 0;
+    }
+
+    if (directionX == 0 &&
+        directionY == 0)
+    {
+        heldDirectionX = 0;
+        heldDirectionY = 0;
+        return;
+    }
+
+    if (directionX != heldDirectionX ||
+        directionY != heldDirectionY)
+    {
+        heldDirectionX = directionX;
+        heldDirectionY = directionY;
+        nextRepeatTime =
+            currentTime + firstRepeatDelayMilliseconds;
+    }
+    else if (static_cast<std::int32_t>(
+                 currentTime - nextRepeatTime) < 0)
+    {
+        return;
+    }
+    else
+    {
+        nextRepeatTime =
+            currentTime + repeatIntervalMilliseconds;
+    }
+
+    if (directionY < 0)
+    {
+        VR_SendMenuKeyTap(kVrMenuKeyUpArrow);
+    }
+    else if (directionY > 0)
+    {
+        VR_SendMenuKeyTap(kVrMenuKeyDownArrow);
+    }
+    else if (directionX < 0)
+    {
+        VR_SendMenuKeyTap(kVrMenuKeyLeftArrow);
+    }
+    else
+    {
+        VR_SendMenuKeyTap(kVrMenuKeyRightArrow);
+    }
+}
+
 void VR_UpdateMenuControllerNavigation()
 {
     static bool menuWasActive = false;
@@ -14193,6 +14315,46 @@ void VR_UpdateMenuControllerNavigation()
             g_vrMenuBackHeld;
     }
 
+    // Drive the menus as a gamepad and send no cursor events at all, so the
+    // virtual mouse cannot overlay the controller input.
+    if (VR_UsesGamepadMenuNavigation())
+    {
+        VR_UpdateGamepadMenuNavigation(
+            stickX,
+            stickY,
+            stickValid,
+            currentTime);
+
+        if (confirmHeld &&
+            !confirmWasHeld)
+        {
+            VR_SendMenuKeyTap(kVrMenuKeyEnter);
+        }
+
+        if (backHeld &&
+            !backWasHeld)
+        {
+            VR_SendMenuKeyTap(27);
+        }
+
+        confirmWasHeld = confirmHeld;
+        backWasHeld = backHeld;
+        menuWasActive = true;
+
+        if (!loggedMenuCursor)
+        {
+            Com_Printf(
+                0,
+                "[VR] Menus are driven as a gamepad: the stick steps the "
+                "selection, confirm sends Enter and back sends Escape. "
+                "No cursor is drawn or moved.\n");
+
+            loggedMenuCursor = true;
+        }
+
+        return;
+    }
+
     // KISAK_SP_VR_CENTERED_SCRIPT_MODAL_V75
     // These dialogs still need one-pass shared painting to prevent duplicate
     // stereo copies. V82/V88 author every menu, including shared modals, in
@@ -14219,7 +14381,8 @@ void VR_UpdateMenuControllerNavigation()
 
     const std::uint32_t cursorWidth =
         eyeLocalMenu &&
-        capturedWidth >= 2u
+        capturedWidth >= 2u &&
+        !VR_UsesWinlatorXrAlternateEyeRendering()
             ? capturedWidth / 2u
             : capturedWidth;
 
