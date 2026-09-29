@@ -21815,8 +21815,13 @@ void VR_UpdatePackedUiScreenPlacement()
         return;
     }
 
+    // Alternate-eye rendering gives that one eye the whole window, so there
+    // is no half to take; authoring in half-width pixels there would leave
+    // the 2D layer filling only the left side of the eye image.
     const int uiEyeWidth =
-        mainStereoWidth / 2;
+        VR_UsesWinlatorXrAlternateEyeRendering()
+            ? mainStereoWidth
+            : mainStereoWidth / 2;
 
     if (uiEyeWidth <= 0)
     {
