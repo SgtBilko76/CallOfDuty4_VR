@@ -22559,12 +22559,18 @@ void VR_SendWinlatorXrState()
     state.rightHapticFrames =
         g_vrWinlatorXrPendingHapticFrames[VR_CONTROLLER_RIGHT];
     state.vrMode = VrWinlatorXr::VrMode::Immersive;
-    state.stereoMode = VrWinlatorXr::StereoMode::SideBySide;
+    state.stereoMode = VrWinlatorXr::UsesAlternateEyeRendering()
+        ? VrWinlatorXr::StereoMode::AlternateEye
+        : VrWinlatorXr::StereoMode::SideBySide;
     state.fovXDegrees = g_vrWinlatorXrFovXDegrees;
     state.fovYDegrees = g_vrWinlatorXrFovYDegrees;
 
     VrWinlatorXr::SendState(state);
     g_vrWinlatorXrPendingHapticFrames = {};
+
+    // After the packet, so the eye the stamp names is the eye the next frame
+    // draws.
+    VrWinlatorXr::AdvanceEye();
 }
 
 bool VR_InitWinlatorXr(
@@ -24950,8 +24956,18 @@ void VR_UpdateWinlatorXrVirtualScreen(
         const bool activePause =
             !VR_IsCenteredMonoscopicMenuActive() &&
             connectionState == CA_ACTIVE;
-        screen.sourceLeft = activePause ? 0.5f : 0.0f;
-        screen.sourceRight = activePause ? 1.0f : 0.5f;
+        // Side by side the menu is authored in one half of the window; in
+        // alternate-eye mode that one eye image is the whole window.
+        if (VrWinlatorXr::UsesAlternateEyeRendering())
+        {
+            screen.sourceLeft = 0.0f;
+            screen.sourceRight = 1.0f;
+        }
+        else
+        {
+            screen.sourceLeft = activePause ? 0.5f : 0.0f;
+            screen.sourceRight = activePause ? 1.0f : 0.5f;
+        }
     }
     else
     {
@@ -26466,6 +26482,19 @@ bool VR_IsWinlatorXrBackendActive()
 {
     return g_vrRuntimeBackend ==
         VrRuntimeBackend::WinlatorXr;
+}
+
+bool VR_UsesWinlatorXrAlternateEyeRendering()
+{
+    return VR_IsWinlatorXrBackendActive() &&
+        VrWinlatorXr::UsesAlternateEyeRendering();
+}
+
+int VR_WinlatorXrCurrentEye()
+{
+    return VR_IsWinlatorXrBackendActive()
+        ? VrWinlatorXr::CurrentEye()
+        : 0;
 }
 
 bool VR_GetPhysicalSniperScopeCaptureLayout(

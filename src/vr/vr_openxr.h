@@ -87,6 +87,12 @@ bool VR_IsPhysicalSniperScopeAimActive();
 // out mid-frame; see vr_packed_layout.h.
 bool VR_IsWinlatorXrBackendActive();
 
+// True when the WinlatorXR backend is sending one whole eye per frame rather
+// than a side-by-side pair. VR_WinlatorXrCurrentEye() says which eye the frame
+// being built is for (0 left, 1 right); it is 0 whenever this is false.
+bool VR_UsesWinlatorXrAlternateEyeRendering();
+int VR_WinlatorXrCurrentEye();
+
 // Publishes the final rendered viewmodel optic pose.  The compositor uses
 // the grip-relative anchor to keep the lens rigidly attached to the rifle;
 // the SP game uses the world-space ray for ballistic convergence.

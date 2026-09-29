@@ -1860,18 +1860,27 @@ void __cdecl CG_DrawActive(int localClientNum)
     refdef_s rightEyeRefdef =
         cgArray[0].refdef;
 
+    // Alternate-eye rendering gives the one eye drawn this frame the whole
+    // window; side by side splits the window between the two.
+    const bool alternateEyeRendering =
+        VR_UsesWinlatorXrAlternateEyeRendering();
+
     const int leftEyeWidth =
-        stereoWidth / 2;
+        alternateEyeRendering
+            ? stereoWidth
+            : stereoWidth / 2;
 
     const int rightEyeWidth =
-        stereoWidth - leftEyeWidth;
+        alternateEyeRendering
+            ? stereoWidth
+            : stereoWidth - leftEyeWidth;
 
     leftEyeRefdef.width =
         leftEyeWidth;
 
     rightEyeRefdef.x =
         cgArray[0].refdef.x +
-        leftEyeWidth;
+        (alternateEyeRendering ? 0 : leftEyeWidth);
 
     rightEyeRefdef.width =
         rightEyeWidth;
@@ -2000,9 +2009,16 @@ void __cdecl CG_DrawActive(int localClientNum)
     }
 #endif
 
-    VR_BeginStereoEyeRender(0u);
-    CL_RenderScene(&leftEyeRefdef);
-    VR_EndStereoEyeRender();
+    const int alternateEyeIndex =
+        VR_WinlatorXrCurrentEye();
+
+    if (!alternateEyeRendering ||
+        alternateEyeIndex == 0)
+    {
+        VR_BeginStereoEyeRender(0u);
+        CL_RenderScene(&leftEyeRefdef);
+        VR_EndStereoEyeRender();
+    }
 
     const auto vrLeftEyeEnd =
         std::chrono::steady_clock::now();
@@ -2016,9 +2032,13 @@ void __cdecl CG_DrawActive(int localClientNum)
             .cmds = nullptr;
     }
 
-    VR_BeginStereoEyeRender(1u);
-    CL_RenderScene(&rightEyeRefdef);
-    VR_EndStereoEyeRender();
+    if (!alternateEyeRendering ||
+        alternateEyeIndex == 1)
+    {
+        VR_BeginStereoEyeRender(1u);
+        CL_RenderScene(&rightEyeRefdef);
+        VR_EndStereoEyeRender();
+    }
 
     const auto vrStereoFrontendEnd =
         std::chrono::steady_clock::now();
