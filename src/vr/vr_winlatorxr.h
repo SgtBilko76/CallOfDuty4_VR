@@ -92,6 +92,15 @@ struct ScopeLens
 void SetVirtualScreen(const VirtualScreen& screen);
 void SetScopeLens(const ScopeLens& lens);
 
+// Alternate-eye rendering, enabled with KISAK_VR_WINLATORXR_AER=1. The window
+// carries one whole eye per frame rather than both eyes side by side, so the
+// eye being shown gets the full window resolution. Callers that lay out the
+// frame must ask before splitting the window, and the frame loop must call
+// AdvanceEye() once per frame after the state packet is sent.
+bool UsesAlternateEyeRendering();
+int CurrentEye();
+void AdvanceEye();
+
 } // namespace kisak::vr::winlatorxr
 
 // Copies the scope panel out of the render target while the command list is

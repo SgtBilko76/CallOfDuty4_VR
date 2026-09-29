@@ -127,6 +127,25 @@ const char* RequestedApiVersion()
         : kDefaultApiVersion;
 }
 
+// Alternate-eye rendering. Instead of packing both eyes side by side into one
+// frame, the window carries one whole eye per frame and WinlatorXR updates
+// that eye's framebuffer, which spends the full window resolution on the eye
+// being shown. The blue channel of the sync stamp says which eye it is.
+// Off by default: side-by-side is the path tested on hardware.
+bool AlternateEyeRendering()
+{
+    static const bool enabled = []() {
+        const char* const requested = std::getenv("KISAK_VR_WINLATORXR_AER");
+        return requested != nullptr &&
+            (requested[0] == '1' || requested[0] == 'y' || requested[0] == 'Y');
+    }();
+    return enabled;
+}
+
+// Which eye the next frame carries. Toggled once per frame, after the state
+// packet goes out, so the packet and the stamp always agree.
+int g_alternateEye = 0;
+
 bool BindReceiveSocket(const std::uint16_t port)
 {
     SOCKET candidate = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -406,7 +425,10 @@ HRESULT PresentVirtualScreen(
 
     const float windowWidth = static_cast<float>(description.Width);
     const float windowHeight = static_cast<float>(description.Height);
-    const float eyeWidth = windowWidth * 0.5f;
+    // Alternate-eye rendering puts one whole eye image in the window, so the
+    // quad spans it rather than half of it.
+    const bool alternateEye = AlternateEyeRendering();
+    const float eyeWidth = alternateEye ? windowWidth : windowWidth * 0.5f;
 
     const RECT sourceRect = {
         static_cast<LONG>(screen.sourceLeft * windowWidth),
@@ -519,9 +541,13 @@ HRESULT PresentVirtualScreen(
         constexpr std::size_t kRow = kCells + 1u;
         std::array<ScreenVertex, kCells * kCells * 6u> vertices = {};
 
-        for (std::size_t eye = 0u; eye < 2u && SUCCEEDED(hr); ++eye)
+        const std::size_t passes = alternateEye ? 1u : 2u;
+        for (std::size_t pass = 0u; pass < passes && SUCCEEDED(hr); ++pass)
         {
-            const float eyeLeft = static_cast<float>(eye) * eyeWidth;
+            const std::size_t eye =
+                alternateEye ? static_cast<std::size_t>(CurrentEye()) : pass;
+            const float eyeLeft =
+                alternateEye ? 0.0f : static_cast<float>(pass) * eyeWidth;
             const auto& grid = screen.grid[eye];
 
             std::size_t vertexCount = 0u;
@@ -645,7 +671,9 @@ HRESULT PresentScopeLens(
     }
 
     const float windowHeight = static_cast<float>(description.Height);
-    const float eyeWidth = static_cast<float>(description.Width) * 0.5f;
+    const bool alternateEye = AlternateEyeRendering();
+    const float eyeWidth =
+        static_cast<float>(description.Width) * (alternateEye ? 1.0f : 0.5f);
 
     IDirect3DStateBlock9* savedState = nullptr;
     IDirect3DSurface9* savedTarget = nullptr;
@@ -733,9 +761,13 @@ HRESULT PresentScopeLens(
         constexpr std::size_t kRow = kCells + 1u;
         std::array<ScreenVertex, kCells * kCells * 6u> vertices = {};
 
-        for (std::size_t eye = 0u; eye < 2u && SUCCEEDED(hr); ++eye)
+        const std::size_t passes = alternateEye ? 1u : 2u;
+        for (std::size_t pass = 0u; pass < passes && SUCCEEDED(hr); ++pass)
         {
-            const float eyeLeft = static_cast<float>(eye) * eyeWidth;
+            const std::size_t eye =
+                alternateEye ? static_cast<std::size_t>(CurrentEye()) : pass;
+            const float eyeLeft =
+                alternateEye ? 0.0f : static_cast<float>(pass) * eyeWidth;
             const auto& grid = lens.grid[eye];
 
             std::size_t vertexCount = 0u;
@@ -833,6 +865,24 @@ HRESULT PresentScopeLens(
 }
 
 } // namespace
+
+bool UsesAlternateEyeRendering()
+{
+    return AlternateEyeRendering();
+}
+
+int CurrentEye()
+{
+    return AlternateEyeRendering() ? g_alternateEye : 0;
+}
+
+void AdvanceEye()
+{
+    if (AlternateEyeRendering())
+    {
+        g_alternateEye ^= 1;
+    }
+}
 
 bool IsContainerDetected()
 {
@@ -1214,7 +1264,12 @@ void VR_WinlatorXrBeforePresent(
         hr = device->ColorFill(
             backBuffer,
             &syncRect,
-            D3DCOLOR_XRGB(wxr::SyncPixelRed(sync), 0, 0));
+            D3DCOLOR_XRGB(
+                wxr::SyncPixelRed(sync),
+                0,
+                wxr::UsesAlternateEyeRendering() && wxr::CurrentEye() == 1
+                    ? 255
+                    : 0));
         backBuffer->Release();
     }
 
