@@ -169,7 +169,7 @@ void RunWinlatorXrProtocolTests()
     state.fovXDegrees = 99.0f;
     state.fovYDegrees = 103.4f;
     Check(
-        vwxr::FormatStatePacket(state) == "3.000 0.000 1 99.000 103.400 1",
+        vwxr::FormatStatePacket(state) == "3.000 0.000 1 1 99.000 103.400",
         "WinlatorXR state packet format");
     Check(vwxr::SyncPixelRed(224) == 224u && vwxr::SyncPixelRed(257) == 1u, "WinlatorXR sync pixel wraps");
 
