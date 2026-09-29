@@ -299,6 +299,99 @@ IDirect3DTexture9* EnsureScopeLensMask(IDirect3DDevice9* const device)
 
 } // namespace
 
+
+// Winlator's public builds create the game window with a title bar and place
+// it at an offset -- this session logged vid_xpos -6, vid_ypos 32. The
+// HMD_SYNC pixel is stamped at back-buffer (0,0), but WinlatorXR samples
+// X-screen (0,0), so with an offset window it never sees the stamp and keeps
+// presenting the frame flat: the side-by-side pair then shows as two copies.
+//
+// Strip the frame and pin the window to the screen, every frame. It is
+// idempotent and only acts on drift, because the window can be re-styled at
+// any device reset.
+void EnsureBorderlessWindow(IDirect3DDevice9* const device)
+{
+    static HWND cachedWindow = nullptr;
+    static bool loggedFix = false;
+
+    HWND window = cachedWindow;
+    if (window == nullptr)
+    {
+        D3DDEVICE_CREATION_PARAMETERS parameters = {};
+        if (FAILED(device->GetCreationParameters(&parameters)))
+        {
+            return;
+        }
+        window = parameters.hFocusWindow;
+        if (window == nullptr)
+        {
+            return;
+        }
+        cachedWindow = window;
+    }
+
+    const int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+    const int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+    if (screenWidth <= 0 || screenHeight <= 0)
+    {
+        return;
+    }
+
+    const LONG_PTR style = GetWindowLongPtrA(window, GWL_STYLE);
+    const LONG_PTR wantedStyle =
+        (style & ~(WS_CAPTION | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME |
+                   WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) |
+        WS_POPUP;
+
+    const LONG_PTR exStyle = GetWindowLongPtrA(window, GWL_EXSTYLE);
+    const LONG_PTR wantedExStyle =
+        exStyle & ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE |
+                    WS_EX_DLGMODALFRAME | WS_EX_STATICEDGE);
+
+    RECT bounds = {};
+    const bool haveBounds = GetWindowRect(window, &bounds) != FALSE;
+    const bool placed =
+        haveBounds &&
+        bounds.left == 0 &&
+        bounds.top == 0 &&
+        (bounds.right - bounds.left) == screenWidth &&
+        (bounds.bottom - bounds.top) == screenHeight;
+
+    if (placed && wantedStyle == style && wantedExStyle == exStyle)
+    {
+        return;
+    }
+
+    if (wantedStyle != style)
+    {
+        SetWindowLongPtrA(window, GWL_STYLE, wantedStyle);
+    }
+    if (wantedExStyle != exStyle)
+    {
+        SetWindowLongPtrA(window, GWL_EXSTYLE, wantedExStyle);
+    }
+
+    SetWindowPos(
+        window,
+        HWND_TOP,
+        0,
+        0,
+        screenWidth,
+        screenHeight,
+        SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+
+    if (!loggedFix)
+    {
+        loggedFix = true;
+        Com_Printf(
+            0,
+            "[VR][WINLATORXR] Pinned the game window borderless at 0,0 "
+            "%dx%d so the HMD_SYNC pixel lands on screen (0,0).\n",
+            screenWidth,
+            screenHeight);
+    }
+}
+
 HRESULT PresentVirtualScreen(
     IDirect3DDevice9* const device,
     IDirect3DSurface9* const backBuffer,
@@ -1026,6 +1119,10 @@ void VR_WinlatorXrBeforePresent(
     {
         return;
     }
+
+    // Before anything else: WinlatorXR only enters VR when it finds the sync
+    // pixel at screen (0,0).
+    wxr::EnsureBorderlessWindow(device);
 
     int sync = 0;
     bool matched = false;
