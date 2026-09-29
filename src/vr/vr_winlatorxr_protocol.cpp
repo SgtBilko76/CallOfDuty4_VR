@@ -299,17 +299,21 @@ std::string FormatStatePacket(const StatePacket& state)
     std::string output;
     output.reserve(48u);
 
+    // XrAPI field order is
+    //   L_HAPTICS R_HAPTICS MODE_VR HMD_FOVX HMD_FOVY MODE_3D
+    // so MODE_3D comes last, after the two FOV values, not straight after
+    // MODE_VR.
     AppendFixed(&output, state.leftHapticFrames);
     output.push_back(' ');
     AppendFixed(&output, state.rightHapticFrames);
     output.push_back(' ');
     output.append(std::to_string(static_cast<int>(state.vrMode)));
     output.push_back(' ');
-    output.append(std::to_string(static_cast<int>(state.stereoMode)));
-    output.push_back(' ');
     AppendFixed(&output, state.fovXDegrees);
     output.push_back(' ');
     AppendFixed(&output, state.fovYDegrees);
+    output.push_back(' ');
+    output.append(std::to_string(static_cast<int>(state.stereoMode)));
 
     return output;
 }
