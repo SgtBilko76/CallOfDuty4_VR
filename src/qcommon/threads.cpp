@@ -358,6 +358,63 @@ void __cdecl Sys_WaitForSingleObject(void** event)
     iassert(result == ((((uint32_t)0x00000000L)) + 0));
 }
 
+// KISAK_SP_VR_SMP_HANDSHAKE_DIAGNOSTICS
+// Some launches reach the menu and then never present a frame: black window,
+// audio playing, process alive, nothing submitted to the GPU. The waits below
+// are the handshake between the main thread and the backend thread, and one of
+// them is where a hung run sits. Wait in slices and name the one that stalls,
+// so the log says where it is stuck instead of leaving it to be inferred.
+//
+// Only manual-reset events are sampled. Polling an auto-reset event consumes
+// its signal and would change the very behaviour being observed, so
+// renderPausedEvent and backendEvent[GENERIC] are deliberately not read.
+static void Sys_LogSmpHandshakeState(const char *waitName, int milliseconds)
+{
+    Com_Printf(
+        0,
+        "[SMP][STALL] %s waited %i ms. noThreadOwnership=%i rendererRunning=%i "
+        "renderCompleted=%i workerCmd=%i renderPausedCount=%u smpData=%s "
+        "thread=%s\n",
+        waitName,
+        milliseconds,
+        Sys_WaitForSingleObjectTimeout(&noThreadOwnershipEvent, 0) ? 1 : 0,
+        Sys_WaitForSingleObjectTimeout(&rendererRunningEvent, 0) ? 1 : 0,
+        Sys_WaitForSingleObjectTimeout(&renderCompletedEvent, 0) ? 1 : 0,
+        Sys_WaitForSingleObjectTimeout(backendEvent, 0) ? 1 : 0,
+        renderPausedCount,
+        smpData ? "pending" : "null",
+        Sys_IsRenderThread() ? "BACKEND" : (Sys_IsMainThread() ? "MAIN" : "other"));
+}
+
+static void Sys_WaitForSingleObjectDiagnosed(void **event, const char *waitName)
+{
+    const uint32_t sliceMsec = 2000u;
+    int waited = 0;
+    int reported = 0;
+
+    while (!Sys_WaitForSingleObjectTimeout(event, sliceMsec))
+    {
+        waited += (int)sliceMsec;
+
+        // Report a few times and then stay quiet, so a genuine hang does not
+        // fill the log while it is still useful to see it start.
+        if (reported < 5)
+        {
+            Sys_LogSmpHandshakeState(waitName, waited);
+            ++reported;
+        }
+    }
+
+    if (waited != 0)
+    {
+        Com_Printf(
+            0,
+            "[SMP][STALL] %s finally woke after %i ms.\n",
+            waitName,
+            waited);
+    }
+}
+
 bool __cdecl Sys_SpawnWorkerThread(void(__cdecl* function)(uint32_t), uint32_t threadIndex)
 {
     ThreadContext_t threadContext; // [esp+0h] [ebp-4h]
@@ -415,7 +472,7 @@ void __cdecl Sys_FrontEndSleep()
             0,
             "%s",
             "Sys_WaitForSingleObjectTimeout( &noThreadOwnershipEvent, 0 )");
-    Sys_WaitForSingleObject(&rendererRunningEvent);
+    Sys_WaitForSingleObjectDiagnosed(&rendererRunningEvent, "FrontEndSleep/rendererRunning");
     Sys_ResetEvent(&noThreadOwnershipEvent);
     Sys_SetEvent(&backendEvent[1]);
     newCount = InterlockedDecrement(&renderPausedCount);
@@ -427,7 +484,7 @@ void __cdecl Sys_FrontEndSleep()
             "%s\n\t(newCount) = %i",
             "((newCount == -1) || (newCount == 0))",
             newCount);
-    Sys_WaitForSingleObject(&renderPausedEvent);
+    Sys_WaitForSingleObjectDiagnosed(&renderPausedEvent, "FrontEndSleep/renderPaused");
 }
 
 bool __cdecl Sys_WaitForSingleObjectTimeout(void** event, uint32_t msec)
@@ -527,7 +584,7 @@ int __cdecl Sys_IsMainThreadReady()
 
 void __cdecl Sys_WaitForMainThread()
 {
-    Sys_WaitForSingleObject(&noThreadOwnershipEvent);
+    Sys_WaitForSingleObjectDiagnosed(&noThreadOwnershipEvent, "WaitForMainThread/noThreadOwnership");
 }
 
 void __cdecl Sys_StopRenderer()
