@@ -3412,12 +3412,36 @@ void __cdecl RB_CallExecuteRenderCommands()
     }
 }
 
+// KISAK_SP_VR_SMP_HANDSHAKE_DIAGNOSTICS
+// With the threaded backend on this polls rather than blocks, so a backend
+// parked here is invisible to the blocking-wait diagnostics in threads.cpp.
+// Time it and say so, because this is where the backend sits between being
+// told to pause and the main thread releasing the device.
 void RB_RenderThreadIdle()
 {
     if (sys_smp_allowed->current.enabled && r_smp_backend->current.enabled)
+    {
+        const uint32_t idleStart = Sys_Milliseconds();
+        static bool loggedIdleStall = false;
+
         R_ProcessWorkerCmdsWithTimeout(Sys_IsMainThreadReady, 1);
+
+        const uint32_t idleMsec = Sys_Milliseconds() - idleStart;
+        if (idleMsec > 2000u && !loggedIdleStall)
+        {
+            Com_Printf(
+                0,
+                "[SMP][STALL] RB_RenderThreadIdle waited %u ms for the main "
+                "thread to release the device.\n",
+                idleMsec);
+
+            loggedIdleStall = true;
+        }
+    }
     else
+    {
         Sys_WaitForMainThread();
+    }
 }
 
 // positive sp value has been detected, the output may be wrong!
@@ -3460,7 +3484,23 @@ void __cdecl  RB_RenderThread(uint32_t threadContext)
             {
                 PROF_SCOPED("WaitBackendEvent");
                 KISAK_NULLSUB();
+
+                // The other place the backend can sit without blocking.
+                const uint32_t waitStart = Sys_Milliseconds();
+                static bool loggedBackendEventStall = false;
+
                 R_ProcessWorkerCmdsWithTimeout(Sys_WaitBackendEvent, 1);
+
+                const uint32_t waitMsec = Sys_Milliseconds() - waitStart;
+                if (waitMsec > 2000u && !loggedBackendEventStall)
+                {
+                    Com_Printf(
+                        0,
+                        "[SMP][STALL] backend waited %u ms for a wake event.\n",
+                        waitMsec);
+
+                    loggedBackendEventStall = true;
+                }
             }
 
             if (Sys_FinishRenderer())
