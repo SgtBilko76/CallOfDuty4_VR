@@ -1246,6 +1246,12 @@ void KisakCrash_SetStage(const char* stage)
     }
 }
 
+const char* KisakCrash_GetStage()
+{
+    const char* const stage = g_stage.load(std::memory_order_acquire);
+    return stage != nullptr ? stage : "(none)";
+}
+
 void KisakCrash_SetFrameNumber(const unsigned int frameNumber)
 {
     g_frameNumber.store(
