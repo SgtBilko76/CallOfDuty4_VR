@@ -18,6 +18,11 @@ void KisakCrash_PrepareCurrentThread(const char* threadName);
 // allocate memory or write files, so frame-stage breadcrumbs are cheap enough
 // to keep enabled in Release builds.
 void KisakCrash_SetStage(const char* stage);
+
+// The last stage any thread published. A single global, so it names where
+// execution reached rather than which thread is there; enough to tell a
+// frozen frame loop from one that never started.
+const char* KisakCrash_GetStage();
 void KisakCrash_SetFrameNumber(unsigned int frameNumber);
 void KisakCrash_SetVrState(
     bool initialized,
