@@ -5,6 +5,7 @@
 #include "vr/vr_winlatorxr.h"
 
 #include "qcommon/qcommon.h"
+#include "win32/win_crash_diagnostics.h"
 
 #include <windows.h>
 #include <d3d9.h>
@@ -892,12 +893,70 @@ bool IsContainerDetected()
         (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0u;
 }
 
+// KISAK_SP_VR_PRESENT_WATCHDOG
+// Some launches reach the menu and then never present a frame, with every
+// thread asleep and nothing submitted to the GPU -- a deadlock rather than a
+// spin, and in none of the handshake waits that are already instrumented.
+// Count presents and, when they stop, say so along with the last stage the
+// engine published, so a frozen run names where it got to.
+std::atomic<unsigned int> g_presentCount{0u};
+std::atomic<bool> g_watchdogStarted{false};
+
+void PresentWatchdogMain()
+{
+    unsigned int lastCount = 0u;
+    int quietSeconds = 0;
+    bool reported = false;
+
+    for (;;)
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+
+        const unsigned int now =
+            g_presentCount.load(std::memory_order_relaxed);
+
+        if (now != lastCount)
+        {
+            lastCount = now;
+            quietSeconds = 0;
+            reported = false;
+            continue;
+        }
+
+        quietSeconds += 2;
+
+        if (quietSeconds >= 6 && !reported)
+        {
+            Com_Printf(
+                0,
+                "[WATCHDOG] No frame presented for %i s; %u presented so far. "
+                "Last stage reached: '%s'.\n",
+                quietSeconds,
+                now,
+                KisakCrash_GetStage());
+
+            reported = true;
+        }
+    }
+}
+
+void StartPresentWatchdog()
+{
+    bool expected = false;
+    if (g_watchdogStarted.compare_exchange_strong(expected, true))
+    {
+        std::thread(PresentWatchdogMain).detach();
+    }
+}
+
 bool Start(std::string* const error)
 {
     if (g_running.load(std::memory_order_acquire))
     {
         return true;
     }
+
+    StartPresentWatchdog();
 
     const auto fail = [error](const char* message)
     {
@@ -1161,6 +1220,10 @@ void VR_WinlatorXrBeforePresent(
     IDirect3DDevice9* const device,
     const std::uint64_t renderFrameId)
 {
+    kisak::vr::winlatorxr::g_presentCount.fetch_add(
+        1u,
+        std::memory_order_relaxed);
+
     namespace wxr = kisak::vr::winlatorxr;
 
     if (device == nullptr ||
