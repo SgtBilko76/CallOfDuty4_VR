@@ -904,38 +904,79 @@ std::atomic<bool> g_watchdogStarted{false};
 
 void PresentWatchdogMain()
 {
+    // Two failure modes to catch, not one: frames stopping dead (the startup
+    // hang) and frames crawling (gameplay sitting near 1 fps while menus run
+    // at 72). Reporting only the first left the second silent.
+    constexpr int sampleSeconds = 2;
+    constexpr double slowFramesPerSecond = 5.0;
+
     unsigned int lastCount = 0u;
     int quietSeconds = 0;
-    bool reported = false;
+    int slowSamples = 0;
+    bool reportedStall = false;
+    bool reportedSlow = false;
 
     for (;;)
     {
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        std::this_thread::sleep_for(
+            std::chrono::seconds(sampleSeconds));
 
         const unsigned int now =
             g_presentCount.load(std::memory_order_relaxed);
 
-        if (now != lastCount)
+        const unsigned int delta = now - lastCount;
+        lastCount = now;
+
+        if (delta == 0u)
         {
-            lastCount = now;
-            quietSeconds = 0;
-            reported = false;
+            slowSamples = 0;
+            reportedSlow = false;
+            quietSeconds += sampleSeconds;
+
+            if (quietSeconds >= 6 && !reportedStall)
+            {
+                Com_Printf(
+                    0,
+                    "[WATCHDOG] No frame presented for %i s; %u presented so "
+                    "far. Last stage reached: '%s'.\n",
+                    quietSeconds,
+                    now,
+                    KisakCrash_GetStage());
+
+                reportedStall = true;
+            }
+
             continue;
         }
 
-        quietSeconds += 2;
+        quietSeconds = 0;
+        reportedStall = false;
 
-        if (quietSeconds >= 6 && !reported)
+        const double rate =
+            static_cast<double>(delta) /
+            static_cast<double>(sampleSeconds);
+
+        if (rate < slowFramesPerSecond)
         {
-            Com_Printf(
-                0,
-                "[WATCHDOG] No frame presented for %i s; %u presented so far. "
-                "Last stage reached: '%s'.\n",
-                quietSeconds,
-                now,
-                KisakCrash_GetStage());
+            ++slowSamples;
 
-            reported = true;
+            if (slowSamples >= 2 && !reportedSlow)
+            {
+                Com_Printf(
+                    0,
+                    "[WATCHDOG] Presenting at only %.1f frames/s; %u "
+                    "presented so far. Last stage reached: '%s'.\n",
+                    rate,
+                    now,
+                    KisakCrash_GetStage());
+
+                reportedSlow = true;
+            }
+        }
+        else
+        {
+            slowSamples = 0;
+            reportedSlow = false;
         }
     }
 }
