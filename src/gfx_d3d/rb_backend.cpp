@@ -3593,7 +3593,34 @@ void __cdecl RB_RenderCommandFrame(const GfxBackEndData *data)
     Sys_RenderCompleted();
     {
         PROF_SCOPED("WaitRenderSwap");
+
+        // KISAK_SP_VR_SWAPWAIT_DIAGNOSTICS
+        // Gameplay sits at exactly 1.0 frames/s while menus run at 72, which
+        // is a fixed wait per frame rather than a GPU that got slower. This
+        // is the only per-frame block left unmeasured: the backend waiting on
+        // the swap fence. Time it and say how much of the frame it eats.
+        const uint32_t swapWaitStart = Sys_Milliseconds();
+
         R_ProcessWorkerCmdsWithTimeout(RB_BackendTimeout, 1);
+
+        const uint32_t swapWaitMsec =
+            Sys_Milliseconds() - swapWaitStart;
+
+        static uint32_t worstSwapWait = 0u;
+        static int reportedSwapWaits = 0;
+
+        if (swapWaitMsec > 100u &&
+            swapWaitMsec > worstSwapWait &&
+            reportedSwapWaits < 6)
+        {
+            worstSwapWait = swapWaitMsec;
+            ++reportedSwapWaits;
+
+            Com_Printf(
+                0,
+                "[SWAPWAIT] Backend waited %u ms for the swap fence.\n",
+                swapWaitMsec);
+        }
     }
     if (allowRendering)
     {
