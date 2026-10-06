@@ -3554,6 +3554,52 @@ void __cdecl  RB_RenderThread(uint32_t threadContext)
     }
 }
 
+int __cdecl RB_BackendTimeout();
+
+// KISAK_SP_VR_SWAPWAIT_DIAGNOSTICS
+// Reporting after the wait returns says nothing when the wait never returns,
+// which is exactly the case being chased: one frame presented, then silence.
+// Wrap the predicate so it speaks up from inside the poll loop.
+int __cdecl RB_BackendTimeoutDiagnosed()
+{
+    static uint32_t waitStart = 0u;
+    static bool waiting = false;
+    static int reported = 0;
+
+    const int done = RB_BackendTimeout();
+
+    if (done)
+    {
+        waiting = false;
+        return done;
+    }
+
+    const uint32_t now = Sys_Milliseconds();
+
+    if (!waiting)
+    {
+        waiting = true;
+        waitStart = now;
+        return done;
+    }
+
+    const uint32_t elapsed = now - waitStart;
+
+    if (elapsed > 1000u && reported < 5)
+    {
+        ++reported;
+        waitStart = now;
+
+        Com_Printf(
+            0,
+            "[SWAPWAIT] Still waiting on the swap fence after %u ms; the "
+            "frame has not completed.\n",
+            elapsed);
+    }
+
+    return done;
+}
+
 int __cdecl RB_BackendTimeout()
 {
     BOOL v1; // [esp+0h] [ebp-Ch]
@@ -3601,7 +3647,7 @@ void __cdecl RB_RenderCommandFrame(const GfxBackEndData *data)
         // the swap fence. Time it and say how much of the frame it eats.
         const uint32_t swapWaitStart = Sys_Milliseconds();
 
-        R_ProcessWorkerCmdsWithTimeout(RB_BackendTimeout, 1);
+        R_ProcessWorkerCmdsWithTimeout(RB_BackendTimeoutDiagnosed, 1);
 
         const uint32_t swapWaitMsec =
             Sys_Milliseconds() - swapWaitStart;
