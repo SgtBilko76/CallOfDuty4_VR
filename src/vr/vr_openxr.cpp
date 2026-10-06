@@ -21,6 +21,7 @@ void __cdecl UI_MouseEvent(int localClientNum, int x, int y);
 #include "gfx_d3d/r_init.h"
 
 #include "qcommon/qcommon.h"
+#include "qcommon/threads.h"
 #include "win32/win_crash_diagnostics.h"
 
 #include <windows.h>
@@ -25411,6 +25412,14 @@ void VR_FrameWinlatorXr()
         g_vrViews.size() < kVrStereoEyeCount)
     {
         return;
+    }
+
+    // WinlatorXR only enters VR when it finds the sync pixel at screen (0,0).
+    if (Sys_IsMainThread())
+    {
+        KisakCrash_SetStage(
+            "VR_Frame: WinlatorXR pin game window");
+        VrWinlatorXr::PinGameWindow();
     }
 
     KisakCrash_SetStage(
