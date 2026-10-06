@@ -50,8 +50,13 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 # headers down MSVC-only paths they cannot satisfy.
 # -Wno-c++11-narrowing: the enums carry values like 0xFFFFFFFF in an
 # __int32 enum, which MSVC accepts and which keeps the same bit pattern.
+# -mlong-double-64: the decompiled code stores floats in `long double` and
+# reads them back through `*(double *)&`, which only works where long double
+# is double, as on MSVC. With mingw's 80-bit long double every such read
+# comes back near zero -- a script's SetSlowMotion(1, 1) set the game's
+# timescale to 0 and capped gameplay at one frame per second.
 set(KISAK_MINGW_MS_FLAGS
-    "-fms-extensions -fdeclspec -fasm-blocks -Wno-c++11-narrowing")
+    "-fms-extensions -fdeclspec -fasm-blocks -Wno-c++11-narrowing -mlong-double-64")
 set(CMAKE_C_FLAGS_INIT   "${KISAK_MINGW_MS_FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${KISAK_MINGW_MS_FLAGS}")
 
