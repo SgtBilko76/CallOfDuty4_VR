@@ -93,6 +93,10 @@ bool VR_IsWinlatorXrBackendActive();
 bool VR_UsesWinlatorXrAlternateEyeRendering();
 int VR_WinlatorXrCurrentEye();
 
+// True when menu arrow keys and mouse motion from the desktop should be
+// ignored because the controllers drive the menus as a gamepad.
+bool VR_ShouldIgnoreDesktopMenuInput();
+
 // Publishes the final rendered viewmodel optic pose.  The compositor uses
 // the grip-relative anchor to keep the lens rigidly attached to the rifle;
 // the SP game uses the world-space ray for ballistic convergence.

@@ -1792,6 +1792,17 @@ void __cdecl CL_KeyEvent(int32_t localClientNum, int32_t key, int32_t down, uint
         return;
     }
 
+    // In menus, WinlatorXR's emulated arrow keys would step the selection a
+    // second time on top of the controller's own steps. The console keeps
+    // its arrow keys.
+    if ((clientUIActives[0].keyCatchers & 0x10) != 0 &&
+        (clientUIActives[0].keyCatchers & 0x01) == 0 &&
+        key >= 154 && key <= 157 &&
+        VR_ShouldIgnoreDesktopMenuInput())
+    {
+        return;
+    }
+
     const char *v4; // eax
     KeyState *keys; // [esp+34h] [ebp-41Ch]
     const char *kb; // [esp+38h] [ebp-418h]
