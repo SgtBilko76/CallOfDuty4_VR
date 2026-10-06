@@ -92,6 +92,10 @@ struct ScopeLens
 void SetVirtualScreen(const VirtualScreen& screen);
 void SetScopeLens(const ScopeLens& lens);
 
+// Keeps the game window borderless at screen (0,0), where WinlatorXR looks for
+// the sync pixel. Main thread only: the window belongs to it.
+void PinGameWindow();
+
 } // namespace kisak::vr::winlatorxr
 
 // Copies the scope panel out of the render target while the command list is
