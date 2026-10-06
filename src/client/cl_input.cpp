@@ -2938,7 +2938,10 @@ int __cdecl CL_MouseEvent(int x, int y, int dx, int dy)
             // IN_MouseMove polls every frame.  Do not let an unchanged
             // desktop cursor overwrite the OpenXR controller menu cursor.
             // Actual desktop mouse motion still takes ownership normally.
-            if (dx != 0 || dy != 0)
+            // With the controllers driving the menus as a gamepad, the
+            // hidden desktop cursor would select whatever it hovers over.
+            if ((dx != 0 || dy != 0) &&
+                !VR_ShouldIgnoreDesktopMenuInput())
             {
                 UI_MouseEvent(0, x, y);
             }

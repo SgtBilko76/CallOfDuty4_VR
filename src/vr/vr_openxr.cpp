@@ -14114,12 +14114,18 @@ int VR_MenuKeyNumber(
         : fallback;
 }
 
+// Set while VR_SendMenuKeyTap injects a key, so the desktop-input filter
+// below can tell the game's own menu taps from WinlatorXR's emulated ones.
+static bool g_vrSendingMenuKey = false;
+
 void VR_SendMenuKeyTap(
     const int keyNumber)
 {
     const std::uint32_t eventTime =
         static_cast<std::uint32_t>(
             Sys_Milliseconds());
+
+    g_vrSendingMenuKey = true;
 
     CL_KeyEvent(
         0,
@@ -14132,6 +14138,8 @@ void VR_SendMenuKeyTap(
         keyNumber,
         0,
         eventTime);
+
+    g_vrSendingMenuKey = false;
 }
 
 // KISAK_SP_VR_GAMEPAD_MENU_NAVIGATION
@@ -26663,6 +26671,17 @@ bool VR_IsWinlatorXrBackendActive()
 {
     return g_vrRuntimeBackend ==
         VrRuntimeBackend::WinlatorXr;
+}
+
+// WinlatorXR also turns the sticks into desktop arrow keys and mouse motion.
+// With the menus driven as a gamepad those arrive on top of the stick's own
+// steps, and the hidden desktop cursor moves the selection wherever it hovers,
+// so the selection jumps. Drop both while the gamepad drives the menus.
+bool VR_ShouldIgnoreDesktopMenuInput()
+{
+    return !g_vrSendingMenuKey &&
+        VR_IsWinlatorXrBackendActive() &&
+        VR_UsesGamepadMenuNavigation();
 }
 
 bool VR_GetPhysicalSniperScopeCaptureLayout(
