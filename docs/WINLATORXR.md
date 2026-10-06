@@ -11,8 +11,8 @@ runtime. Instead it offers [XrAPI](https://winlatorxr.github.io/xrapi.html):
 - the game draws both eyes side by side into its own window, and WinlatorXR
   shows the left half to the left eye and the right half to the right eye
 
-Tested on a Quest 3 with WinlatorXR `cats-27` and with a current public
-Winlator build: stereo rendering, head and controller tracking, the physical
+Tested on a Quest 3 with WinlatorXR `cats-27` and with WinlatorXR Dawn
+(`dawn-33`): stereo rendering, head and controller tracking, the physical
 weapon handling, menus and the campaign through Crew Expendable all work.
 Pico and Quest 2 are untested.
 
@@ -120,7 +120,7 @@ Measured on a Quest 3 at `2388x1080` (1194x1080 per eye) with WinlatorXR
 `cats-27`: about 45 to 72 frames per second, median around 54, limited by
 Box64 and DXVK rather than by the game's own frame work (6 to 7 ms per stereo
 frame). Higher resolutions cost noticeably: `2864x1296` dropped the median to
-about 35. With a current public Winlator build, Crew Expendable runs at about
+about 35. With WinlatorXR Dawn (`dawn-33`), Crew Expendable runs at about
 26 to 50 frames per second; menus and videos reach 72.
 
 The executable is cross-built from Linux with llvm-mingw. That build must use
