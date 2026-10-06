@@ -11,9 +11,10 @@ runtime. Instead it offers [XrAPI](https://winlatorxr.github.io/xrapi.html):
 - the game draws both eyes side by side into its own window, and WinlatorXR
   shows the left half to the left eye and the right half to the right eye
 
-Tested on a Quest 3 with WinlatorXR `cats-27`: stereo rendering, head and
-controller tracking, the physical weapon handling, menus and the campaign
-intro all work. Pico and Quest 2 are untested.
+Tested on a Quest 3 with WinlatorXR `cats-27` and with a current public
+Winlator build: stereo rendering, head and controller tracking, the physical
+weapon handling, menus and the campaign through Crew Expendable all work.
+Pico and Quest 2 are untested.
 
 ## How it works
 
@@ -22,6 +23,10 @@ intro all work. Pico and Quest 2 are untested.
 - At startup the game writes `Z:\tmp\xr\version` (default `0.5`) and
   `Z:\tmp\xr\vr`. It then waits up to 15 s for the first tracking packet.
   If none arrives, startup stops with an error.
+- Public Winlator builds open the game window with a title bar and at an
+  offset. WinlatorXR looks for the sync pixel at screen (0,0), so the game
+  strips the frame and pins its window there from the main thread; without
+  that, WinlatorXR shows the side-by-side frame flat, as two copies.
 - The packed D3D9 backbuffer is presented directly, with no D3D11 copy and no
   CPU readback. Before each `Present`, the frame's `HMD_SYNC` value is stamped
   as a 10x10 red block in the top-left corner. It uses the sync value of the
@@ -67,6 +72,12 @@ button and Next weapon on Y, because XrAPI reports the left Menu button
 separately from Y. Nothing is bound to the right stick click, which
 WinlatorXR uses for its own menu.
 
+Menus are driven like a gamepad, with no pointer: the left stick moves the
+selection (hold to repeat), A confirms, B goes back. WinlatorXR's own
+keyboard and mouse emulation is ignored in menus so it cannot move the
+selection a second time. Set `KISAK_VR_MENU_GAMEPAD=0` to get the pointer
+back.
+
 | Action | Button |
 | --- | --- |
 | Fire | Right trigger |
@@ -105,15 +116,24 @@ insertion radius, and preloads shaders during level load.
 
 ## Performance
 
-Measured on a Quest 3 at `2388x1080` (1194x1080 per eye): about 45 to 72
-frames per second, median around 54, limited by Box64 and DXVK rather than by
-the game's own frame work (6 to 7 ms per stereo frame). Higher resolutions
-cost noticeably: `2864x1296` dropped the median to about 35.
+Measured on a Quest 3 at `2388x1080` (1194x1080 per eye) with WinlatorXR
+`cats-27`: about 45 to 72 frames per second, median around 54, limited by
+Box64 and DXVK rather than by the game's own frame work (6 to 7 ms per stereo
+frame). Higher resolutions cost noticeably: `2864x1296` dropped the median to
+about 35. With a current public Winlator build, Crew Expendable runs at about
+26 to 50 frames per second; menus and videos reach 72.
+
+The executable is cross-built from Linux with llvm-mingw. That build must use
+`-mlong-double-64`, as the toolchain file does: the engine reads floats back
+through `long double`, and with mingw's 80-bit default a script's slow-motion
+reset set the game's timescale to 0 and held gameplay at one frame per
+second.
 
 ## Known limitations
 
-- No dedicated physical-scope panel. The window has no room for it, so
-  scoped weapons use the normal view.
+- The physical scope is new and still experimental: the scope camera renders
+  into its own panel, which is drawn as a round lens on the optic of scoped
+  weapons. Report misplaced or missing lenses.
 - The virtual screen for menus and videos is anchored when it appears; there
   is no manual recenter for it yet.
 - Controller velocity is estimated from successive packets.
