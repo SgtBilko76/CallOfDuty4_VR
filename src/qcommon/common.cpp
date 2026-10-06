@@ -1809,6 +1809,31 @@ static void Com_AttractMode(int localClientNum)
 }
 #endif
 
+// KISAK_SP_VR_FRAMEPHASE_DIAGNOSTICS
+// Gameplay holds exactly 1.0 frames/s and the watchdog places the main thread
+// inside Com_Frame. Time each phase of the frame and name any that takes over
+// 200 ms, so the next slow run says which one holds the missing second.
+static uint32_t s_framePhaseStart = 0u;
+static int s_framePhaseReports = 0;
+
+static void Com_FramePhaseBegin()
+{
+    s_framePhaseStart = Sys_Milliseconds();
+}
+
+static void Com_FramePhaseEnd(const char *phase)
+{
+    const uint32_t now = Sys_Milliseconds();
+    const uint32_t elapsed = now - s_framePhaseStart;
+    s_framePhaseStart = now;
+
+    if (elapsed > 200u && s_framePhaseReports < 120)
+    {
+        ++s_framePhaseReports;
+        Com_Printf(0, "[FRAMEPHASE] %s took %u ms.\n", phase, elapsed);
+    }
+}
+
 void __cdecl Com_Frame_Try_Block_Function()
 {
     float deltaTime; // [esp+4h] [ebp-78h]
@@ -1821,6 +1846,7 @@ void __cdecl Com_Frame_Try_Block_Function()
 
     iassert(cmd_args.nesting == -1);
 
+    Com_FramePhaseBegin();
     Com_WriteConfiguration(0);
 #ifdef KISAK_SP
     CL_CheckStartPlayingDemo();
@@ -1871,6 +1897,7 @@ void __cdecl Com_Frame_Try_Block_Function()
 #endif
     {
         KISAK_NULLSUB();
+        Com_FramePhaseEnd("frame setup");
         PROF_SCOPED("MaxFPSSpin");
         while (1)
         {
@@ -1894,11 +1921,14 @@ void __cdecl Com_Frame_Try_Block_Function()
             msec = 1;
     }
 
+    Com_FramePhaseEnd("max-fps spin and event loop");
     Cbuf_Execute(0, CL_ControllerIndexFromClientNum(0));
     iassert(msec > 0);
     msec = Com_ModifyMsec(msec);
     iassert(msec > 0);
+    Com_FramePhaseEnd("command buffer");
     msec = SV_Frame(msec);
+    Com_FramePhaseEnd("SV_Frame");
 
 #ifdef KISAK_MP
     Com_DedicatedModified();
@@ -1920,6 +1950,7 @@ void __cdecl Com_Frame_Try_Block_Function()
 #elif KISAK_SP
             Cbuf_Execute(0, CL_ControllerIndexFromClientNum(0));
             Com_AttractMode(0);
+            Com_FramePhaseEnd("pre frame");
             //if (!cl_multi_gamepads_enabled) // KISAKTODO?
             //{
             //    v20 = 2;
@@ -1943,12 +1974,14 @@ void __cdecl Com_Frame_Try_Block_Function()
             CL_Frame(0, msec);
 #endif
         }
+        Com_FramePhaseEnd("CL_Frame");
 
 #ifdef KISAK_MP
         dvar_modifiedFlags &= ~2u;
         Com_UpdateMenu();
 #endif
         SCR_UpdateScreen();
+        Com_FramePhaseEnd("SCR_UpdateScreen");
         Ragdoll_Update(msec);
         iassert(Sys_IsMainThread());
 #ifdef KISAK_SP
@@ -1957,7 +1990,29 @@ void __cdecl Com_Frame_Try_Block_Function()
         deltaTime = cls.frametime * EQUAL_EPSILON;
         DevGui_Update(0, deltaTime);
         Com_Statmon();
+        Com_FramePhaseEnd("ragdoll, devgui and statmon");
+        const uint32_t waitEndStart = Sys_Milliseconds();
         R_WaitEndTime();
+        if (Sys_Milliseconds() - waitEndStart > 200u &&
+            s_framePhaseReports < 120)
+        {
+            // R_WaitEndTime only sleeps to the frame limiter's end time, so a
+            // long wait means minMsec is long: name what set it.
+            Com_Printf(
+                0,
+                "[FRAMEPHASE] limiter: minMsec %i (maxFPS %i), "
+                "com_timescaleValue %f, com_codeTimeScale %f, timescale %f, "
+                "dev_timescale %f, fixedtime %i, msec %i.\n",
+                minMsec,
+                maxFPS,
+                com_timescaleValue,
+                com_codeTimeScale,
+                com_timescale->current.value,
+                dev_timescale->current.value,
+                com_fixedtime->current.integer,
+                msec);
+        }
+        Com_FramePhaseEnd("R_WaitEndTime");
     }
 
 #ifdef KISAK_SP
@@ -2139,7 +2194,9 @@ void __cdecl Com_Frame()
     else
     {
         Profile_Guard(1);
+        Com_FramePhaseBegin();
         Com_CheckSyncFrame();
+        Com_FramePhaseEnd("Com_CheckSyncFrame (save wait, DB_Update)");
         {
             PROF_SCOPED("MainThread");
             Com_Frame_Try_Block_Function();
