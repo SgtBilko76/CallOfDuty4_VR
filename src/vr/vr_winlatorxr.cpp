@@ -307,89 +307,27 @@ IDirect3DTexture9* EnsureScopeLensMask(IDirect3DDevice9* const device)
 // X-screen (0,0), so with an offset window it never sees the stamp and keeps
 // presenting the frame flat: the side-by-side pair then shows as two copies.
 //
-// Strip the frame and pin the window to the screen, every frame. It is
-// idempotent and only acts on drift, because the window can be re-styled at
-// any device reset.
-void EnsureBorderlessWindow(IDirect3DDevice9* const device)
+// Present runs on the render thread, which does not own the window. Restyling
+// or moving another thread's window sends it messages and waits for them, and
+// the main thread is itself waiting on the render thread, so doing it from
+// Present stalled every frame (0.9 fps, black). Present only records the
+// window; PinGameWindow does the work from the main thread.
+std::atomic<HWND> g_gameWindow{nullptr};
+
+void RecordGameWindow(IDirect3DDevice9* const device)
 {
-    static HWND cachedWindow = nullptr;
-    static bool loggedFix = false;
-
-    HWND window = cachedWindow;
-    if (window == nullptr)
-    {
-        D3DDEVICE_CREATION_PARAMETERS parameters = {};
-        if (FAILED(device->GetCreationParameters(&parameters)))
-        {
-            return;
-        }
-        window = parameters.hFocusWindow;
-        if (window == nullptr)
-        {
-            return;
-        }
-        cachedWindow = window;
-    }
-
-    const int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    const int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-    if (screenWidth <= 0 || screenHeight <= 0)
+    if (g_gameWindow.load(std::memory_order_acquire) != nullptr)
     {
         return;
     }
 
-    const LONG_PTR style = GetWindowLongPtrA(window, GWL_STYLE);
-    const LONG_PTR wantedStyle =
-        (style & ~(WS_CAPTION | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME |
-                   WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) |
-        WS_POPUP;
-
-    const LONG_PTR exStyle = GetWindowLongPtrA(window, GWL_EXSTYLE);
-    const LONG_PTR wantedExStyle =
-        exStyle & ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE |
-                    WS_EX_DLGMODALFRAME | WS_EX_STATICEDGE);
-
-    RECT bounds = {};
-    const bool haveBounds = GetWindowRect(window, &bounds) != FALSE;
-    const bool placed =
-        haveBounds &&
-        bounds.left == 0 &&
-        bounds.top == 0 &&
-        (bounds.right - bounds.left) == screenWidth &&
-        (bounds.bottom - bounds.top) == screenHeight;
-
-    if (placed && wantedStyle == style && wantedExStyle == exStyle)
+    D3DDEVICE_CREATION_PARAMETERS parameters = {};
+    if (SUCCEEDED(device->GetCreationParameters(&parameters)) &&
+        parameters.hFocusWindow != nullptr)
     {
-        return;
-    }
-
-    if (wantedStyle != style)
-    {
-        SetWindowLongPtrA(window, GWL_STYLE, wantedStyle);
-    }
-    if (wantedExStyle != exStyle)
-    {
-        SetWindowLongPtrA(window, GWL_EXSTYLE, wantedExStyle);
-    }
-
-    SetWindowPos(
-        window,
-        HWND_TOP,
-        0,
-        0,
-        screenWidth,
-        screenHeight,
-        SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-
-    if (!loggedFix)
-    {
-        loggedFix = true;
-        Com_Printf(
-            0,
-            "[VR][WINLATORXR] Pinned the game window borderless at 0,0 "
-            "%dx%d so the HMD_SYNC pixel lands on screen (0,0).\n",
-            screenWidth,
-            screenHeight);
+        g_gameWindow.store(
+            parameters.hFocusWindow,
+            std::memory_order_release);
     }
 }
 
@@ -1205,6 +1143,105 @@ void RecordRenderFrameSync(
         g_renderFrameSyncs.size();
 }
 
+// Strip the frame and pin the window to the screen. Checked every frame
+// because a device reset can restyle the window, but it gives up if the
+// window manager keeps undoing it, so it can never cost every frame.
+void PinGameWindow()
+{
+    static int consecutiveAttempts = 0;
+    static bool loggedFix = false;
+    static bool gaveUp = false;
+
+    const HWND window = g_gameWindow.load(std::memory_order_acquire);
+    if (window == nullptr || gaveUp)
+    {
+        return;
+    }
+
+    const int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+    const int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+    if (screenWidth <= 0 || screenHeight <= 0)
+    {
+        return;
+    }
+
+    const LONG_PTR style = GetWindowLongPtrA(window, GWL_STYLE);
+    const LONG_PTR wantedStyle =
+        (style & ~(WS_CAPTION | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME |
+                   WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) |
+        WS_POPUP;
+
+    const LONG_PTR exStyle = GetWindowLongPtrA(window, GWL_EXSTYLE);
+    const LONG_PTR wantedExStyle =
+        exStyle & ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE |
+                    WS_EX_DLGMODALFRAME | WS_EX_STATICEDGE);
+
+    RECT bounds = {};
+    const bool haveBounds = GetWindowRect(window, &bounds) != FALSE;
+    const bool placed =
+        haveBounds &&
+        bounds.left == 0 &&
+        bounds.top == 0 &&
+        (bounds.right - bounds.left) == screenWidth &&
+        (bounds.bottom - bounds.top) == screenHeight;
+
+    if (placed && wantedStyle == style && wantedExStyle == exStyle)
+    {
+        consecutiveAttempts = 0;
+        return;
+    }
+
+    if (++consecutiveAttempts > 30)
+    {
+        gaveUp = true;
+        Com_Printf(
+            0,
+            "[VR][WINLATORXR] The window manager keeps moving the game "
+            "window (now %ld,%ld %ldx%ld, style 0x%lx); no longer pinning "
+            "it.\n",
+            static_cast<long>(bounds.left),
+            static_cast<long>(bounds.top),
+            static_cast<long>(bounds.right - bounds.left),
+            static_cast<long>(bounds.bottom - bounds.top),
+            static_cast<unsigned long>(style));
+        return;
+    }
+
+    if (wantedStyle != style)
+    {
+        SetWindowLongPtrA(window, GWL_STYLE, wantedStyle);
+    }
+    if (wantedExStyle != exStyle)
+    {
+        SetWindowLongPtrA(window, GWL_EXSTYLE, wantedExStyle);
+    }
+
+    SetWindowPos(
+        window,
+        HWND_TOP,
+        0,
+        0,
+        screenWidth,
+        screenHeight,
+        SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+
+    if (!loggedFix)
+    {
+        loggedFix = true;
+        Com_Printf(
+            0,
+            "[VR][WINLATORXR] Pinned the game window borderless at 0,0 "
+            "%dx%d so the HMD_SYNC pixel lands on screen (0,0); it was at "
+            "%ld,%ld %ldx%ld.\n",
+            screenWidth,
+            screenHeight,
+            static_cast<long>(bounds.left),
+            static_cast<long>(bounds.top),
+            static_cast<long>(bounds.right - bounds.left),
+            static_cast<long>(bounds.bottom - bounds.top));
+    }
+}
+
 } // namespace kisak::vr::winlatorxr
 
 void VR_WinlatorXrBeforePresent(
@@ -1224,9 +1261,9 @@ void VR_WinlatorXrBeforePresent(
         return;
     }
 
-    // Before anything else: WinlatorXR only enters VR when it finds the sync
-    // pixel at screen (0,0).
-    wxr::EnsureBorderlessWindow(device);
+    // The main thread pins this window so the sync pixel lands on screen
+    // (0,0); see PinGameWindow.
+    wxr::RecordGameWindow(device);
 
     int sync = 0;
     bool matched = false;
