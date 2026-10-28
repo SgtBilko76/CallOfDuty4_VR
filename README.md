@@ -1,5 +1,7 @@
 # KisakCOD VR for WinlatorXR
 
+**Download, install guide, controls and pictures: [portroyale.online/cod4.html](https://portroyale.online/cod4.html)**
+
 [![Sponsor](https://img.shields.io/badge/Sponsor-SgtBilko76-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/SgtBilko76)
 
 Call of Duty 4: Modern Warfare (2007) in VR, standalone on a Meta Quest: no
