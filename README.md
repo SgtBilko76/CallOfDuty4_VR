@@ -99,6 +99,8 @@ Updating from beta 0.1: replacing `KisakCOD-sp.exe` is enough.
 
 ## Controls
 
+![Call of Duty 4 VR controller mapping](docs/controls.webp)
+
 | Action | Button |
 | --- | --- |
 | Fire | Right trigger |
